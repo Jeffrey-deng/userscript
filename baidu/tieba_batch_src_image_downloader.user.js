@@ -3,7 +3,7 @@
 // @name:zh         批量下载贴吧原图
 // @name:en         Batch srcImage downloader for tieba
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         3.1
+// @version         3.2
 // @description     一键打包下载贴吧中一贴的原图
 // @description:zh  一键打包下载贴吧中一贴的原图
 // @description:en  Batch Download Src Image From Baidu Tieba
@@ -32,7 +32,8 @@
 // ==/UserScript==
 
 // @更新日志
-// v.3.0        2020.5.26      1.支持只下载楼主
+// v.3.1        2020.5.26      1.支持只下载楼主
+//                             2.图片后缀名根据图片实际类型命名
 // v.3.0        2020.5.21      1.支持下载多页
 //                             2.支持下载被吞掉的图
 // v.2.6.1      2019.12.16     1.修改压缩包名称为帖子的标题
@@ -392,7 +393,7 @@
     /** 批量下载 **/
     function batchDownload(config) {
         try {
-            options = $.extend(true, options, config);
+            options = $.extend(true, {}, options, config);
             var location_info = options.callback.parseLocationInfo_callback(options);
             var files = options.callback.parseFiles_callback(location_info, options);
             if (!(files && files.promise)) {
@@ -645,16 +646,10 @@
                     return names;
                 },
                 "beforeFilesDownload_callback": function (photos, names, location_info, options, zip, main_folder) {
-                    var photo_urls_str = "";
-                    var paddingZeroLength = (photos.length + "").length;
+                    const paddingZeroLength = (photos.length + "").length;
                     $.each(photos, function (i, photo) {
-                        var photoDefaultName = names.prefix + "_" + common_utils.paddingZero(photo.folder_sort_index, paddingZeroLength) + "." + (names.suffix || photo.url.substring(photo.url.lastIndexOf('.') + 1));
-                        photo.fileName = photoDefaultName;
-                        var line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo.url + "\r\n";
-                        photo_urls_str += line;
+                        photo.fileName = names.prefix + "_" + common_utils.paddingZero(photo.folder_sort_index, paddingZeroLength) + "." + (names.suffix || photo.url.substring(photo.url.lastIndexOf('.') + 1));
                     });
-                    main_folder.file("photo_url_list.txt", photo_urls_str);
-                    main_folder.file("帮助.txt", "有些图片可能下载下来是裂掉的缩略图，可以从photo_url_list.text中按文件名手动找到链接下载。");
                     options.failFiles = undefined;
                 },
                 "eachFileOnload_callback": function (blob, photo, location_info, options, zipFileLength, zip, main_folder, folder) {
@@ -663,13 +658,27 @@
                             options.failFiles = [];
                         }
                         options.failFiles.push(photo);
+                    } else if (!options.names.suffix && photo.location == 'photos' && blob.type && blob.type.indexOf('image/') === 0) {
+                        // 如果没有指定后缀名，那么后缀根据content-type来判断
+                        let suffixRegex = /\.[^.]+$/, suffix = ('.' + blob.type.replace('image/', '').replace('jpeg', 'jpg'));
+                        photo.fileName = photo.fileName.replace(suffixRegex, suffix);
+                        photo.url = photo.url.replace(suffixRegex, suffix);
                     }
                     return true;
                 },
                 "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                    let photo_urls_str = "", failPhotoListStr = "";
+                    // 链接列表文件
+                    $.each(photos, function (i, photo) {
+                        photo_urls_str += ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo.url + "\r\n";
+                    });
+                    main_folder.file("photo_url_list.txt", photo_urls_str);
+                    // 帮助文件
+                    main_folder.file("帮助.txt", "有些图片可能下载下来是裂掉的缩略图，可以从photo_url_list.text中按文件名手动找到链接下载。");
+                    // 失败链接列表
                     if (options.failFiles && options.failFiles.length > 0) {
                         toastr.error("共 " + options.failFiles.length + " 张下载失败，已记录在photos_fail_list.txt！", "", {"progressBar": false, timeOut: 0});
-                        var failPhotoListStr = "";
+                        failPhotoListStr = "";
                         for (var i in options.failFiles) {
                             var failFile = options.failFiles[i];
                             failPhotoListStr += (failFile.location + "/" + failFile.fileName + "\t" + failFile.url + "\r\n");

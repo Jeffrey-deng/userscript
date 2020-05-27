@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         1.8.7
+// @version         1.8.8
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -44,6 +44,7 @@
 
 // @更新日志
 // V 1.8.7      2020.05.26     1.增加收藏时自动备份（不需要点击确认框）开关
+//                             2.修复在超过9张图（over9pic）中含有gif时，gif的文件名后缀错误的问题
 // V 1.8.6      2020.05.23     1.修复www.weibo.com域名下不起作用的问题
 // V 1.8.5      2020.05.15     1.修复视频下载失败，原因是不能弹出白名单确认框，解决办法是允许所有域名，弹出确认框后请点击总是允许所有域名，请放心点允许，代码绝对无后门
 // V 1.8.3      2020.05.12     1.优化收藏备份
@@ -138,23 +139,23 @@
                     console.log(responseDetails.status);
                 }
             });
-            /*try {
-             var xhr = new XMLHttpRequest();
-             xhr.open('GET', url, true);
-             xhr.responseType = "blob";
-             xhr.onreadystatechange = function(evt) {
-             if (xhr.readyState === 4) {
-             if (xhr.status === 200 || xhr.status === 0) {
-             callback(xhr.response, args);
-             } else {
-             callback(null, args);
-             }
-             }
-             };
-             xhr.send();
-             } catch (e) {
-             callback(null, args);
-             }*/
+            // try {
+            //     var xhr = new XMLHttpRequest();
+            //     xhr.open('GET', url, true);
+            //     xhr.responseType = "blob";
+            //     xhr.onreadystatechange = function(evt) {
+            //         if (xhr.readyState === 4) {
+            //             if (xhr.status === 200 || xhr.status === 0) {
+            //                 callback(xhr.response, args);
+            //             } else {
+            //                 callback(null, args);
+            //             }
+            //         }
+            //     };
+            //     xhr.send();
+            // } catch (e) {
+            //     callback(null, args);
+            // }
         }
 
         function fileNameFromHeader(disposition, url) {
@@ -396,7 +397,7 @@
     /** 批量下载 **/
     function batchDownload(config) {
         try {
-            options = $.extend(true, options, config);
+            options = $.extend(true, {}, options, config);
             var location_info = options.callback.parseLocationInfo_callback(options);
             var files = options.callback.parseFiles_callback(location_info, options);
             if (!(files && files.promise)) {
@@ -576,6 +577,9 @@
                     });
                     // GM_download({'url': url, 'name': fileName, 'saveAs': true});
                     common_utils.ajaxDownload(url, function (blob) {
+                        if (blob.type === 'image/gif' && fileName.indexOf('.gif') === -1) {
+                            fileName = fileName.replace(/\.[^.]+$/, '.gif');
+                        }
                         common_utils.downloadBlobFile(blob, fileName);
                         notify_download_media.css("display", "none").remove();
                     });
@@ -679,7 +683,7 @@
             "isNeedConfirmDownload": true, // 下载前是否需要弹出确认框
             "useQueueDownloadThreshold": 0,
             "only_download_url": false, // 是否仅下载链接，true: 只下链接，false：下载文件和链接
-            "only_print_url": false, // 是否仅在打印出链接
+            "only_print_url": false, // 是否仅打印出链接
             "suffix": null,
             "callback": {
                 "parseFiles_callback": function (location_info, options) {
@@ -764,7 +768,7 @@
                             $.each(pic_ids, function (i, photo_id) {
                                 var photo = {};
                                 photo.photo_id = photo_id;
-                                if (pic_thumb_str && pic_thumb_str.indexOf(photo_id + ".gif") != -1) {
+                                if (pic_thumb_str && pic_thumb_str.indexOf(photo_id + ".gif") != -1) { // 这里只能判断前九张图是否是gif
                                     photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".gif";
                                 } else {
                                     photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".jpg";
@@ -913,20 +917,11 @@
                     return names;
                 },
                 "beforeFilesDownload_callback": function (photos, names, location_info, options, zip, main_folder) {
-                    var photo_urls_str = "", photo_url;
                     $.each(photos, function (i, photo) {
                         if (!photo.fileName) {
                             photo.fileName = photo.url.substring(photo.url.lastIndexOf('/') + 1);
                         }
-                        if (photo.location == 'videos' && photo.url.indexOf('f.video.weibocdn.com') != -1 && photo.url.indexOf('&Expires=') == -1 && !/\.mov$/.test(photo.fileName)) {
-                            photo_url = 'http://f.video.weibocdn.com/' + photo.fileName + '?KID=unistore,video';
-                        } else {
-                            photo_url = photo.url;
-                        }
-                        var line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo_url + "\r\n";
-                        photo_urls_str += line;
                     });
-                    main_folder.file("photo_url_list.txt", photo_urls_str);
                     options.failFiles = undefined;
                 },
                 "beforeFileDownload_callback": function (photo, location_info, options, zipFileLength, zip, main_folder, folder) {
@@ -942,22 +937,40 @@
                             options.failFiles = [];
                         }
                         options.failFiles.push(photo);
+                    } else if (photo.location == 'photos' && blob.type === 'image/gif' && photo.fileName.indexOf('.gif') === -1) {
+                        // 如果在超过9张图（over9pic）中含有gif，那么后缀需要根据content-type来判断
+                        let suffixRegex = /\.[^.]+$/, suffix = '.gif';
+                        photo.fileName = photo.fileName.replace(suffixRegex, suffix);
+                        photo.url = photo.url.replace(suffixRegex, suffix);
                     }
                     return true;
                 },
                 "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                    let photo_urls_str = "", failPhotoListStr = "", photo_url, failFile;
+                    // 链接列表文件
+                    $.each(photos, function (i, photo) {
+                        if (photo.location == 'videos' && photo.url.indexOf('f.video.weibocdn.com') != -1 && photo.url.indexOf('&Expires=') == -1 && !/\.mov$/.test(photo.fileName)) {
+                            photo_url = 'http://f.video.weibocdn.com/' + photo.fileName + '?KID=unistore,video';
+                        } else {
+                            photo_url = photo.url;
+                        }
+                        let line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo_url + "\r\n";
+                        photo_urls_str += line;
+                    });
+                    main_folder.file("photo_url_list.txt", photo_urls_str);
+                    // 失败链接列表文件
                     if (options.failFiles && options.failFiles.length > 0) {
                         toastr.error("共 " + options.failFiles.length + " 张下载失败，已记录在photos_fail_list.txt！", "", {
                             "progressBar": false,
                             timeOut: 0
                         });
-                        var failPhotoListStr = "";
-                        for (var i in options.failFiles) {
-                            var failFile = options.failFiles[i];
+                        for (let i in options.failFiles) {
+                            failFile = options.failFiles[i];
                             failPhotoListStr += (failFile.location + "/" + failFile.fileName + "\t" + failFile.url + "\r\n");
                         }
                         main_folder.file("photos_fail_list.txt", failPhotoListStr);
                     }
+                    // 如果只是打印链接
                     if (options.only_print_url) {
                         showPhotoLinksPopPanel($wb_card, options);
                         toastr.success("已打印");

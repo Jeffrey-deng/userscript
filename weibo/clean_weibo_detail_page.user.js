@@ -4,15 +4,22 @@
 // @version      0.1
 // @description  clean weibo detail page
 // @author       Jeffrey.Deng
+// @supportURL   https://imcoder.site/u/center/sendLetter?chatuid=1016726508048
 // @homepageURL  https://imcoder.site
 // @weibo        http://weibo.com/3983281402
 // @match        https://weibo.com/*
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // ==/UserScript==
 
 (function() {
 
-    function addGlobalStyle(css) {
+    const href = document.location.href;
+    let switch_simple_weibo_style_id,
+        styleElem;
+
+    const addGlobalStyle = GM_addStyle || function addGlobalStyle(css) {
         var head, style;
         head = document.getElementsByTagName('html')[0];
         if (!head) { return; }
@@ -20,13 +27,28 @@
         style.type = 'text/css';
         style.innerHTML = css;
         head.appendChild(style);
-    }
+        return style;
+    };
 
-    var href = document.location.href;
-    if (href.match(/^https:\/\/weibo\.com\/(?!u\/)\d{8,}\/(?!profile\/)\w{8,}\?.*$/)) {
-            var main_width = 920;
-            var img_width = main_width - 100;
-            addGlobalStyle(
+    const switchSimpleWeiboStyle = function(on) { // 切换收藏时自动备份的设置值
+        let saveValue = !!on;
+        if (switch_simple_weibo_style_id) {
+            GM_unregisterMenuCommand(switch_simple_weibo_style_id);
+        }
+        if (saveValue) {
+            switch_simple_weibo_style_id = GM_registerMenuCommand('关闭简洁版样式', function() {
+                switchSimpleWeiboStyle(false);
+                // toastr.success("已关闭简洁版样式~");
+            });
+        } else {
+            switch_simple_weibo_style_id = GM_registerMenuCommand('开启简洁版样式', function() {
+                switchSimpleWeiboStyle(true);
+                // toastr.success("已开启简洁版样式~");
+            });
+        }
+        if (saveValue && !styleElem) {
+            const main_width = 920, img_width = main_width - 100;
+            styleElem = addGlobalStyle(
                 '.B_page .WB_frame {' +
                 '    width: ' + main_width + 'px!important;' +
                 '}' +
@@ -63,5 +85,16 @@
                 '    margin-left: 520px;!important;' +
                 '}'
             );
+        } else if (!saveValue && styleElem) {
+            styleElem.parentNode.removeChild(styleElem);
+            styleElem = null;
+            document.getElementById('Pl_Core_RecommendFeed__74').querySelector('div:nth-child(2)').style.width = '300px';
+            document.getElementById('Pl_Core_RecommendFeed__74').querySelector('div.UI_scrollContainer > div').style.width = '317px';
+        }
     }
+
+    if (href.match(/^https:\/\/weibo\.com\/(?!u\/)\d{8,}\/(?!profile\/)\w{8,}\?.*$/)) {
+            switchSimpleWeiboStyle(true);
+    }
+
 })();
