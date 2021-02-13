@@ -3,7 +3,7 @@
 // @name:zh         批量下载贴吧原图
 // @name:en         Batch srcImage downloader for tieba
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         3.2
+// @version         3.4.2
 // @description     一键打包下载贴吧中一贴的原图
 // @description:zh  一键打包下载贴吧中一贴的原图
 // @description:en  Batch Download Src Image From Baidu Tieba
@@ -19,7 +19,7 @@
 // @match           https://tiebapic.baidu.com/*
 // @connect         baidu.com
 // @connect         bdimg.com
-// @require         https://code.jquery.com/jquery-latest.min.js
+// @require         https://cdn.bootcss.com/jquery/1.11.1/jquery.min.js
 // @require         https://cdn.bootcss.com/toastr.js/2.1.3/toastr.min.js
 // @require         https://cdn.bootcss.com/jszip/3.1.5/jszip.min.js
 // @resource        toastr_css https://cdn.bootcss.com/toastr.js/2.1.3/toastr.min.css
@@ -32,6 +32,8 @@
 // ==/UserScript==
 
 // @更新日志
+// v.3.4.1      2020.7.11      1.修复jQuery下载失败问题
+// v.3.3        2020.6.3       1.修复图片被删除但页面仍能看到却下载不到的问题
 // v.3.1        2020.5.26      1.支持只下载楼主
 //                             2.图片后缀名根据图片实际类型命名
 // v.3.0        2020.5.21      1.支持下载多页
@@ -463,9 +465,13 @@
     //右键新标签打开图片直接打开原图
     initRightClickOpenSource();
 
-    var getPostAuthorId = function () { // 获取楼主ID
-        let userInfoStr = $('#j_p_postlist').children('.j_l_post').first().find('.d_name').attr('data-field');
+    var getReplyAuthorUid = function ($reply) { // 获取回复UID
+        let userInfoStr = $reply.find('.d_name').attr('data-field');
         return (userInfoStr && userInfoStr.match(/"user_id":(\d+)/) && RegExp.$1) || 0;
+    }
+
+    var getPostAuthorUid = function () { // 获取楼主UID
+        return getReplyAuthorUid($('#j_p_postlist').children('.j_l_post').first());
     }
 
     // css
@@ -512,43 +518,55 @@
             "onlyLz": false,
             "callback": {
                 "parseFiles_callback": function (location_info, options) {
-                    let findPhotosByPage = function () {
-                        let photo_arr = [],
-                            $part_nodes_one = $('.d_post_content,.d_post_content_main').find("img");
-                        //var part_nodes_two = $('.d_post_content_main,.post_bubble_middle,.d_post_content').find("img");
-                        $.each($part_nodes_one, function (i, img) {
-                            // 如果是广告图片则跳过
-                            if (img.parentNode.tagName == "A" && img.parentNode.className.indexOf("j_click_stats") != -1) {
-                                return true;
-                            }
-                            if (img.clientWidth >= options.minWidth) {
-                                if (img.className == "BDE_Image" || img.className == "d_content_img") {
-                                    var photo = {};
-                                    photo.location = "";
-                                    var thumb_url = img.src;
-                                    photo.folder_sort_index = photo_arr.length + 1;
-                                    // 如果是用户上传的图片
-                                    if (img.getAttribute("pic_type") == "0") {
-                                        var urlMatcher = thumb_url.match(/^(https?):\/\/([a-zA-Z]+)\..*\/([^/]+)$/);
-                                        photo.url = urlMatcher[1] + "://" + (urlMatcher[2] == "tiebapic" ? "tiebapic" : "imgsrc") + ".baidu.com/forum/pic/item/" + urlMatcher[3];
+                    let pn = location_info.params.pn || 1,
+                        authorUid = getPostAuthorUid(),
+                        findPhotosByPage = function () {
+                            let photo_arr = [],
+                                $part_nodes_one = $('.d_post_content,.d_post_content_main').find("img");
+                            //var part_nodes_two = $('.d_post_content_main,.post_bubble_middle,.d_post_content').find("img");
+                            $.each($part_nodes_one, function (i, img) {
+                                let $img = $(img);
+                                if (options.onlyLz) { // 只下楼主
+                                    let replyUid = getReplyAuthorUid($img.closest('.j_l_post'));
+                                    if (replyUid != authorUid) {
+                                        return;
                                     }
-                                    // 如果是用户引用的图片
-                                    else {
-                                        var m = thumb_url.match(/^(https?):\/\/(imgsrc|imgsa|tiebapic|\w+\.hiphotos)\.(?:bdimg|baidu)\.com\/(?:forum|album)\/.+\/(\w+\.(?:jpg|jpeg|gif|png|bmp|webp))(?:\?.+)?$/i);
-                                        // 如果引用的是贴吧图片
-                                        if (m !== null) {
-                                            photo.url = m[1] + "://" + (m[2] == "tiebapic" ? "tiebapic" : "imgsrc") + ".baidu.com/forum/pic/item/" + m[3];
-                                        } else {
-                                            photo.url = thumb_url;
-                                        }
-                                    }
-                                    photo.location = "photos";
-                                    photo_arr.push(photo);
                                 }
-                            }
-                        });
-                        return photo_arr;
-                    };
+                                // 如果是广告图片则跳过
+                                if (img.parentNode.tagName == "A" && img.parentNode.className.indexOf("j_click_stats") != -1) {
+                                    return true;
+                                }
+                                if (img.clientWidth >= options.minWidth) {
+                                    if ($img.hasClass("BDE_Image") || $img.hasClass("d_content_img")) {
+                                        var photo = {};
+                                        photo.location = "";
+                                        var thumb_url = img.src;
+                                        photo.folder_sort_index = photo_arr.length + 1;
+                                        // 如果是用户上传的图片
+                                        if ($img.attr("pic_type") == "0") {
+                                            var urlMatcher = thumb_url.match(/^(https?):\/\/([a-zA-Z]+)\..*\/([^/]+)$/);
+                                            photo.url = urlMatcher[1] + "://" + (urlMatcher[2] == "tiebapic" ? "tiebapic" : "imgsrc") + ".baidu.com/forum/pic/item/" + urlMatcher[3];
+                                            photo.id = urlMatcher[3].match(/^[^.]+/)[0];
+                                        }
+                                        // 如果是用户引用的图片
+                                        else {
+                                            var m = thumb_url.match(/^(https?):\/\/(imgsrc|imgsa|tiebapic|\w+\.hiphotos)\.(?:bdimg|baidu)\.com\/(?:forum|album)\/.+\/((\w+)\.(?:jpg|jpeg|gif|png|bmp|webp))(?:\?.+)?$/i);
+                                            // 如果引用的是贴吧图片
+                                            if (m !== null) {
+                                                photo.url = m[1] + "://" + (m[2] == "tiebapic" ? "tiebapic" : "imgsrc") + ".baidu.com/forum/pic/item/" + m[3];
+                                                photo.id = m[4];
+                                            } else {
+                                                photo.url = thumb_url;
+                                            }
+                                        }
+                                        photo.size = $img.attr("size") || 0;
+                                        photo.location = "photos";
+                                        photo_arr.push(photo);
+                                    }
+                                }
+                            });
+                            return photo_arr;
+                        };
                     let notify_photo_data_loading = toastr.success("正在请求图片数据～", "", {
                         "progressBar": false,
                         "hideDuration": 0,
@@ -562,7 +580,7 @@
                                 return $.Deferred(function (dfd) {
                                     $.get(options.baiduLoadPhotosApi, {
                                         'tid': location_info.file,
-                                        'see_lz': options.onlyLz ? 1 : 0,
+                                        'see_lz': options.onlyLz ? 1 : 0, // 只下楼主
                                         'from_page': 0,
                                         // 'alt': 'jview',
                                         'next': 50,
@@ -588,8 +606,10 @@
                                                         photo = {};
                                                         photo.location = "photos";
                                                         photo.folder_sort_index = photo_arr.length + 1;
+                                                        photo.id = original.id;
                                                         photo.url = (original.waterurl && original.waterurl.replace(/^http:\/\//, 'https://')) ||
                                                             (`https://imgsrc.baidu.com/forum/pic/item/${original.id}.jpg`);
+                                                        photo.size = original.size;
                                                         photo_arr.push(photo);
                                                         curr_load_count++;
                                                         lastPicId = original.id;
@@ -598,7 +618,81 @@
                                             if (lastPicId && curr_load_count < pic_amount) {
                                                 loadQueue.append(lastPicId);
                                             } else {
-                                                finalDfd.resolve(photo_arr);
+                                                // 队列下载结束
+                                                // 对比页面数据和api返回数据，两者合并结果，并尝试按页面显示顺序排序
+                                                let combine_photo_arr = [],
+                                                    page_photo_arr = findPhotosByPage().filter(function(photo) {
+                                                        return photo.size != 0; // 有些页面图片没写size，所以这里过滤了没写size的，暂时先这样处理
+                                                    }).map(function(photo) {
+                                                        let has_delete = true;
+                                                        if (photo.id) {
+                                                            for (let p of photo_arr) {
+                                                                // 由于同样一张图片，id有两个，这里采用对比文件大小的方式来确定是否同一张图片
+                                                                if (p.id == photo.id || (p.size != 0 && p.size == photo.size)) {
+                                                                    has_delete = false;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                        photo.has_delete = has_delete;
+                                                        return photo;
+                                                    }),
+                                                    pageLength = page_photo_arr.length,
+                                                    serverLength = photo_arr.length,
+                                                    hasDeleteLength = page_photo_arr.filter(function(photo) {
+                                                        return photo.has_delete;
+                                                    }).length;
+                                                if (hasDeleteLength > 0) {
+                                                    let start_left_index = 0, start_right_index = 0, unshift_length = 0, i, j,
+                                                        photo_url_arr = photo_arr.map(function (photo) {
+                                                            return photo.url;
+                                                        });
+                                                    pn > 1 && $.each(page_photo_arr, function(i, photo) {
+                                                        let index = photo_url_arr.indexOf(photo.url);
+                                                        if (index != -1) {
+                                                            start_right_index = index;
+                                                            start_left_index = i;
+                                                            return false;
+                                                        } else {
+                                                            unshift_length++;
+                                                        }
+                                                    });
+                                                    if (start_right_index > 0) {
+                                                        combine_photo_arr.push.apply(combine_photo_arr, photo_arr.slice(0, start_right_index));
+                                                    }
+                                                    if (start_left_index > 0) {
+                                                        combine_photo_arr.push.apply(combine_photo_arr, page_photo_arr.slice(start_left_index - unshift_length, start_left_index));
+                                                    }
+                                                    for (i = start_left_index, j = start_right_index; i < pageLength && j < serverLength;) {
+                                                        let photo, left = page_photo_arr[i], right = photo_arr[j];
+                                                        if (left.id === right.id || (left.size != 0 && left.size == right.size)) {
+                                                            photo = right;
+                                                            i++;
+                                                            j++;
+                                                        } else {
+                                                            if (left.has_delete) {
+                                                                photo = left;
+                                                                i++;
+                                                            } else {
+                                                                photo = right;
+                                                                j++;
+                                                            }
+                                                        }
+                                                        combine_photo_arr.push(photo);
+                                                    }
+                                                    if (i <= pageLength - 1) {
+                                                        combine_photo_arr.push.apply(combine_photo_arr, page_photo_arr.slice(i, pageLength));
+                                                    }
+                                                    if (j <= serverLength - 1) {
+                                                        combine_photo_arr.push.apply(combine_photo_arr, photo_arr.slice(j, serverLength));
+                                                    }
+                                                    $.each(combine_photo_arr, function(i, photo) {
+                                                        photo.folder_sort_index = i + 1;
+                                                    });
+                                                } else {
+                                                    combine_photo_arr = photo_arr;
+                                                }
+                                                finalDfd.resolve(combine_photo_arr);
                                             }
                                             dfd.resolve();
                                         } else {
