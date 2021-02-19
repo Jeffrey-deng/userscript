@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         1.9.4
+// @version         1.9.5
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -201,7 +201,7 @@
                 aLink.className = 'download-temp-node';
                 aLink.download = fileName;
                 aLink.style = "display:none;";
-                var blob = new Blob([content]);
+                var blob = new Blob([content], {type: content.type});
                 aLink.href = window.URL.createObjectURL(blob);
                 document.body.appendChild(aLink);
                 if (document.all) {
