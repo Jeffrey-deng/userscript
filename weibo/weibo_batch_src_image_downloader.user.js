@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.0
+// @version         2.0.1
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -1461,7 +1461,13 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
         },
 });
 
-const NewWeiboResolver = {};
+const NewWeiboResolver = {
+    'findCardMblogId': function ($wb_card) {
+        var $author_head = $wb_card.find('> div > header > .woo-box-item-flex > div > div.woo-box-flex.woo-box-alignCenter.woo-box-justifyCenter > a');
+        var mblogid = $author_head.attr("href").replace(/\?[^?]*$/,'').match(/\/([a-zA-Z0-9]+)$/) && RegExp.$1;
+        return mblogid;
+    }
+};
 
 Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
         "addDownloadBtnToWeiboCard": function ($wb_card) {
@@ -1480,9 +1486,8 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                     }
                 });
             }, 500);
-            if (!$wb_card.data('weibo')) {
-                var $author_head = $wb_card.find('> div > header > .woo-box-item-flex > div > div.woo-box-flex.woo-box-alignCenter.woo-box-justifyCenter > a');
-                var mblogid = $author_head.attr("href").replace(/\?[^?]*$/,'').match(/\/([a-zA-Z0-9]+)$/) && RegExp.$1;
+            if (!$wb_card.data('weibo') || ($wb_card.data('weibo').mblogid != this.findCardMblogId($wb_card))) {
+                var mblogid = this.findCardMblogId($wb_card);
                 $.get('https://' + document.location.host + '/ajax/statuses/show?id=' + mblogid, function (resp) {
                     $wb_card.data('weibo', resp);
                 });
@@ -1652,7 +1657,7 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                         };
                         return $.Deferred(function (dfd) {
                             let weibo = $wb_card.data('weibo');
-                            if (weibo) {
+                            if (weibo && ($wb_card.data('weibo').mblogid == resolver.findCardMblogId($wb_card))) {
                                 parsePhotosFromIds(weibo, dfd);
                             } else {
                                 $.get('https://' + document.location.host + '/ajax/statuses/show?id=' + mblogid, function (resp) {
