@@ -1476,7 +1476,6 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                 }
                 $card_btn_list.children().each(function (i, li) {
                     if (li.innerText == '收藏' || li.innerText == '取消收藏') {
-                        debugger;
                         $(li).addClass('fav_btn');
                     }
                 });
@@ -2085,7 +2084,6 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
             return list.length > 0 ? list : $('.WB_cardwrap');
         },
         "findCardArrowDown": function () {
-            //debugger;
             return $('article.woo-panel-main .woo-box-flex .woo-font.woo-font--angleDown');
         },
         "findElemClosestCard": function (elem) {
@@ -2152,7 +2150,6 @@ const core = {
             if (e.data == 'mu') {
                 return;
             }
-            debugger;
             resolver.addDownloadBtnToWeiboCard(resolver.findElemClosestCard(this));
         });
         $("body").on("click", resolver.findCardPhotoDownloadBtn().selector, function () {
