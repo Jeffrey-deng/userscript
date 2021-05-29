@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.0.1
+// @version         2.0.2
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -2175,6 +2175,9 @@ const core = {
         // 收藏备份
         let switch_auto_backup_fav_id;
         var getAutoBackUpSetting = function () { // 获取是否开启收藏时自动备份的设置值
+            if (GM_getValue(Constants.KEY_SETTING_AUTO_BACKUP_FAV) == undefined) {
+                return true;
+            }
             return !!GM_getValue(Constants.KEY_SETTING_AUTO_BACKUP_FAV);
         };
         var switchAutoBackUpSetting = function(on) { // 切换收藏时自动备份的设置值
@@ -2213,7 +2216,7 @@ const core = {
         });
         $('body').on('mousedown', resolver.findCardFavBtn().selector, function () {
             var $self = $(this), $wb_card = resolver.findElemClosestCard($self), 
-                isHasFavorite = $self.attr('favorite') == '1' || $self.text() === '取消收藏';
+                isHasFavorite = $self.attr('favorite') == '1' || $self.text() === '取消收藏',
                 mid = resolver.findWeiboCardMid($wb_card, false),
                 omid = resolver.findWeiboCardMid($wb_card, true);
             if (!mid || !omid) {
