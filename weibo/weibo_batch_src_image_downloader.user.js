@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         1.9.5
+// @version         2.0
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -43,6 +43,7 @@
 // ==/UserScript==
 
 // @更新日志
+// v.2.0        2021.5.30      1.初步适配新版微博，修复18图bug
 // v.1.9.4      2020.8.15      1.去掉下载超时时间，修复当照片大小超大时，陷于循环的情况
 // v.1.9.3      2020.7.11      1.修复jQuery下载失败问题
 // V 1.9.2      2020.06.29     1.照片按原页面显示顺序排序
@@ -561,935 +562,1789 @@
         '    visibility:visible;'+
         '}'+
         '.download-link-pop .preview {'+
-        '    visibility:hidden;'+
+        '    /*visibility:hidden;*/'+
+        '    display: none;'+
         '}'+
         '.download-link-pop .preview img {'+
         '    width: 100%;'+
-        '}');
+        '}'+
+        '#app .download-link-pop {'+
+        '   background: #f9f9f9;'+
+        '   border-radius: 3px;'+
+        '   border: 1px solid #ccc;'+
+        '   box-shadow: 0 4px 20px 1px rgb(0 0 0 / 20%);'+
+        '   font-size: 0.8rem!important;'+
+        '   width: 80%;'+
+        '}'+
+        '#app .download-link-pop > * {'+
+        '    padding: 0px;'+
+        '}'+
+        '#app .download-link-pop .link-list ul  {'+
+        '    padding: 10px 0px 10px 35px;'+
+        '    margin: 5px;'+
+        '}'+
+        '#app .download-link-pop .preview {'+
+        '    padding: 0px 15px 15px 15px;'+
+        '}'
+    );
 
-    var addDownloadBtnToWeiboCard = function ($wb_card) {
-        var $card_btn_list = $wb_card.find(".WB_feed_detail .WB_screen .layer_menu_list ul:nth-child(1)");
-        if ($card_btn_list.find(".WB_card_photos_download").length == 0) {
-            $card_btn_list.append('<li class="WB_card_photos_download" title="下载文件和链接"><a>打包下载</a></li>');
-            $card_btn_list.append('<li class="WB_card_photos_download WB_card_photos_download_only_download_url" title="仅下载链接，不下载文件"><a>下载链接</a></li>');
-            $card_btn_list.append('<li class="WB_card_photos_download WB_card_photos_download_only_print_url" title="仅打印出链接"><a>打印链接</a></li>');
-            $card_btn_list.append('<li class="WB_card_photos_show_fav_weibo_backup" title="查看当前微博是否有备份"><a>显示备份</a></li>');
-            $card_btn_list.append('<li class="WB_card_photos_rebuild_fav_weibo_backup" title="重新备份当前微博"><a>重新备份</a></li>');
-        }
-    };
+const Constants = {
+    KEY_FAV_BACKUP_GROUP: 'weibo_fav_backup_group',
+    KEY_SETTING_AUTO_BACKUP_FAV: 'weibo_setting_auto_backup_fav'
+};
 
-    var showPhotoLinksPopPanel = function ($wb_card, options, removeOnClickBody) {
-        options.names || (options.names = {});
-        options.callback || (options.callback = {});
-        const $pop = $('<div class="W_layer W_layer_pop download-link-pop"><div class="content link-list">' +
-                       '<div class="sidebar"><span class="sidebar-btn download-all-link" title="全部打包下载">打包下载</span><span class="sidebar-btn copy-all-link" title="复制所有链接">全部复制</span></div>' +
-                       '<ul></ul></div><div class="content preview"><img></div></div>'),
-              $link_ul = $pop.find('.link-list ul'),
-              $preview_img = $pop.find('.preview img'),
-              photos = options.files, card = options.names.card || options.names.forwardCard || {};
-        removeOnClickBody = removeOnClickBody !== false;
-        $wb_card.find('.WB_feed_detail').append($pop);
-        $.each(photos, function(i, photo) {
-            $link_ul.append(`<li><a href="${photo.url}" target="_blank" download="${photo.fileName}" data-location="${photo.location}" class="clearfix" title="${photo.location == 'photos' ? '点击下载，右键链接另存为' : '右键链接另存为'}">${photo.url}</a></li>`);
-        });
-        $link_ul.on({
-            'mouseenter': function() {
-                let $self = $(this);
-                if ($self.attr('data-location') == 'photos') {
-                    $preview_img.attr('src', $self.attr('href').replace('/large/', '/mw690/')).parent().css('visibility', 'visible');
-                }
-            },
-            'mouseleave': function() {
-                $preview_img.attr('src', '').parent().css('visibility', 'hidden');
-            },
-            'click': function(e) {
-                let $self = $(this), url = $self.attr('href'), fileName = $self.attr('download');
-                if ($self.attr('data-location') == 'photos') {
-                    let notify_download_media = toastr.success('正在下载图片～', '', {
-                        "progressBar": false,
-                        "hideDuration": 0,
-                        "showDuration": 0,
-                        "timeOut": 0,
-                        "closeButton": false,
-                    });
-                    // GM_download({'url': url, 'name': fileName, 'saveAs': true});
-                    common_utils.ajaxDownload(url, function (blob) {
-                        if (blob) {
-                            if (blob.type === 'image/gif' && fileName.indexOf('.gif') === -1) {
-                                fileName = fileName.replace(/\.[^.]+$/, '.gif');
-                            }
-                            common_utils.downloadBlobFile(blob, fileName);
-                        } else {
-                            toastr.error('请手动打开链接下载', '下载失败');
-                        }
-                        notify_download_media.css("display", "none").remove();
-                    });
-                    // e.stopImmediatePropagation();
-                    return false;
-                }
-            }
-        }, 'li a');
-        $pop.on('click', '.copy-all-link', function() {
-            GM_setClipboard($link_ul[0].innerText);
-            toastr.success('复制全部链接成功');
-        }).on('click', '.download-all-link', function() {
-            options.isNeedConfirmDownload = true;
-            options.only_download_url = false;
-            options.only_print_url = false;
-            // if (options.files && !options.callback.parseFiles_callback) {
-            //     options.callback.parseFiles_callback = function () {
-            //         return options.files;
-            //     }
-            // }
-            downloadWeiboCardPhotos($wb_card, options);
-        });
-        if (removeOnClickBody) {
-            function remove(ev) {
-                if(!ev.target.classList.contains('download-temp-node') && !$pop[0].contains(ev.target)){
-                    $pop.remove();
-                    $('body').off("click", remove);
-                }
-            }
-            $('body').on("click", remove);
+
+/**
+ * 接口
+ */
+class Interface {
+
+    /**
+     * 构造函数
+     * @param  {字符串} name    接口名
+     * @param  {字符串数组} methods 该接口所包含的所有方法
+     */
+    constructor(name, methods) {
+
+        //判断接口的参数个数(第一个为接口对象,第二个为参数数组)
+        if (arguments.length != 2) {
+            throw new Error('创建的接口对象参数必须为两个,第二个为方法数组！');
         }
-        console.log('\n--★-- print -- ' + (options.names.folderName || card.name || (card.text ? card.text.substr(0, 15) : card.mid) || '照片链接') + ' ----★--');
-        console.table(JSON.parse(JSON.stringify(photos)), ['location', 'url']);
-        console.log('当url被省略可以复制下面的链接，也可从上面 >Array(' + photos.length + ') 查看');
-        $.each(photos, function (i, photo) {
-            console.log(photo.url);
-        });
-        return $pop;
+
+        // 判断第二个参数是否为数组
+        if(!Array.isArray(methods)){
+            throw new Error('参数2必须为字符串数组！');
+        }
+
+        //接口对象引用名
+        this.name = name;
+
+        //自己的属性
+        this.methods = []; //定义一个内置的空数组对象 等待接受methods里的元素（方法名称）
+
+        //判断数组是否中的元素是否为string的字符串
+        for (var i = 0; i < methods.length; i++) {
+
+            //判断方法数组里面是否为string(字符串)的属性
+            if (typeof methods[i] != 'string') {
+                throw new Error('方法名必须是string类型的!');
+            }
+
+            //把他放在接口对象中的methods中(把接口方法名放在Interface对象的数组中)
+            this.methods.push(methods[i]);
+        }
     }
 
-    var findWeiboCardMid = function ($wb_card, findForwardIfHas) {
-        let mid, isForward = $wb_card.attr("isforward") == '1' ? true : false,
-            isWeiboDelete = $wb_card.children('.WB_empty').length != 0;
-        if (isForward && findForwardIfHas) {
-            mid = $wb_card.attr('omid') || $wb_card.find('.WB_feed_detail .WB_detail .WB_feed_expand .WB_expand').find('.WB_handle').attr('mid');
-        } else {
-            mid = $wb_card.attr('mid');
-            if (!mid && isWeiboDelete) {
-                mid = $wb_card.children('.WB_empty').attr('mid');
-            }
-        }
-        return mid;
-    };
+    /**
+     * 实现
+     * @param  {对象} obj 待实现接口的对象
+     * @param  {接口} I 接口对象
+     * @param  {对象} proxy 接口的实现
+     * @return {对象}           扩展后的当前对象
+     */
+    static impl(obj, I, proxy) {
 
-    var isWeiboDelete = function ($wb_card, findForwardIfHas) {
-        var isForward = $wb_card.attr("isforward") == '1';
-        if (isForward && findForwardIfHas) {
-            return $wb_card.find('.WB_expand > .WB_empty').length > 0;
-        } else {
-            return $wb_card.find('> .WB_empty').length > 0;
+        if (I.constructor != Interface) {
+            throw new Error("参数2不是一个接口！");
         }
-    };
 
-    // hack: 仪表盘控制栏添加按钮，暂时不启用
-    if (false && document.location.href.match(/^https:\/\/(www\.)?weibo\.com\/(?!u\/)\d{8,}\/(?!profile\/)\w{8,}\?.*$/)) {
-        GM_registerMenuCommand('下载', function() {
-            downloadWeiboCardPhotos($('.WB_cardwrap').eq(0));
-        }, 'd');
-        GM_registerMenuCommand('备份', function() {
-            let $wb_card = $('.WB_cardwrap').eq(0), mid = findWeiboCardMid($wb_card, true);
-            if (!mid) {
-                toastr.error('未找到mid，代码需要改进');
-                return;
-            };
-            if (isWeiboDelete($wb_card, true) && getFavWeiboBackup(mid)) {
-                if (!unsafeWindow.confirm('原博已被删除，这会删除之前的备份，是否继续？')) {
-                    return;
-                }
+        // 校验实现是否实现了接口的每一个方法
+        for (var i = 0; i < I.methods.length; i++) {
+
+            // 方法名
+            var methodName = I.methods[i];
+
+            //判断obj中是否实现了接口的方法和methodName是方法(而不是属性)
+            if (!proxy[methodName] || typeof proxy[methodName] != 'function') {
+                throw new Error('有接口的方法没实现');
             }
-            addFavWeiboBackup($wb_card);
-        }, 'b');
+
+            // 将代理中的方法渡给obj
+            obj[methodName] = proxy[methodName];
+        }
     }
+}
+/*jshint esversion: 6 */
 
-    $("body").on("click", ".WB_cardwrap .WB_screen .ficon_arrow_down", function () {
-        addDownloadBtnToWeiboCard($(this).closest(".WB_cardwrap"));
-    });
-    $("body").on("click", ".WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_download", function () {
-        var $self = $(this);
-        var options = {"only_download_url": $self.hasClass('WB_card_photos_download_only_download_url'), "only_print_url": $self.hasClass('WB_card_photos_download_only_print_url')};
-        if (options.only_print_url) {
-            options.isNeedConfirmDownload = false;
-        }
-        downloadWeiboCardPhotos($self.closest(".WB_cardwrap"), options);
-    });
-    GM_registerMenuCommand('一键下载(用户|收藏)一页的微博', function() {
-        if (!/weibo\.com\/(\d+\/profile|\d+(\?|$)|u\/\d+(\?|$)|fav(\?|$)|like\/outbox(\?|$))/.test(document.location.href)) {
-            toastr.error('只支持在用户主页下载');
-            return;
-        }
-        if (!confirm('确定要下载本页所有微博吗？')) {
-            return;
-        }
-        let $notify_start = toastr.success("准备批量下载本页~", "", {
-            "progressBar": false,
-            "hideDuration": 0,
-            "showDuration": 0,
-            "timeOut": 0,
-            "closeButton": false
-        }).toggleClass('batch-download-list-tips', true), count = 0, failPhotoCount = 0;
-        const downloadQueue = new common_utils.TaskQueue(function($wb_card) {
-            return $.Deferred(function(dfd) {
-                if ($wb_card.length > 0 && ($wb_card.attr('action-type') === 'feed_list_item' || $wb_card.children().eq(0).attr('action-type') === 'feed_list_item')) {
-                    count++;
-                    if ($notify_start.length === 0 || !$notify_start.is(':visible')) {
-                        $notify_start = toastr.success("本页批量下载第 1 个~", "", {
+
+/**
+ * 微博解析器接口
+ */
+const WeiboResolver = new Interface("WeiboResolver",[
+        "addDownloadBtnToWeiboCard", // 
+        "showPhotoLinksPopPanel", // 
+        "findWeiboCardMid", // 
+        "isWeiboDelete", // 
+        "downloadWeiboCardPhotos",
+        "addFavWeiboBackup",
+        "getFavWeiboBackup",
+        "removeFavWeiboBackup",
+        "generateBatchDownloadOptionsFromBackup",
+        "batchDownloadPageWeiboCard",
+        "showFavWeiboRestoreBtn",
+        "findFeedCardItemList",
+        "findCardArrowDown",
+        "findElemClosestCard",
+        "findCardPhotoDownloadBtn",
+        "findDeletedCard",
+        "findCardFavBtn",
+        "findCardShowBackupBtn",
+        "findCardRebuildBackupBtn",
+        "findCardRestoreBackupBtn",
+]);
+/*jshint esversion: 6 */
+
+
+const OldWeiboResolver = {};
+
+Interface.impl(OldWeiboResolver, WeiboResolver, {
+        "addDownloadBtnToWeiboCard": function ($wb_card) {
+            var $card_btn_list = $wb_card.find(".WB_feed_detail .WB_screen .layer_menu_list ul:nth-child(1)");
+            if ($card_btn_list.find(".WB_card_photos_download").length == 0) {
+                $card_btn_list.append('<li class="WB_card_photos_download" title="下载文件和链接"><a>打包下载</a></li>');
+                $card_btn_list.append('<li class="WB_card_photos_download WB_card_photos_download_only_download_url" title="仅下载链接，不下载文件"><a>下载链接</a></li>');
+                $card_btn_list.append('<li class="WB_card_photos_download WB_card_photos_download_only_print_url" title="仅打印出链接"><a>打印链接</a></li>');
+                $card_btn_list.append('<li class="WB_card_photos_show_fav_weibo_backup" title="查看当前微博是否有备份"><a>显示备份</a></li>');
+                $card_btn_list.append('<li class="WB_card_photos_rebuild_fav_weibo_backup" title="重新备份当前微博"><a>重新备份</a></li>');
+            }
+        },
+        "showPhotoLinksPopPanel": function ($wb_card, options, removeOnClickBody) {
+            const resolver = this;
+            options.names || (options.names = {});
+            options.callback || (options.callback = {});
+            const $pop = $('<div class="W_layer W_layer_pop download-link-pop"><div class="content link-list">' +
+                           '<div class="sidebar"><span class="sidebar-btn download-all-link" title="全部打包下载">打包下载</span><span class="sidebar-btn copy-all-link" title="复制所有链接">全部复制</span></div>' +
+                           '<ul></ul></div><div class="content preview"><img></div></div>'),
+                  $link_ul = $pop.find('.link-list ul'),
+                  $preview_img = $pop.find('.preview img'),
+                  photos = options.files, card = options.names.card || options.names.forwardCard || {};
+            removeOnClickBody = removeOnClickBody !== false;
+            $wb_card.find('.WB_feed_detail').append($pop);
+            $.each(photos, function(i, photo) {
+                $link_ul.append(`<li><a href="${photo.url}" target="_blank" download="${photo.fileName}" data-location="${photo.location}" class="clearfix" title="${photo.location == 'photos' ? '点击下载，右键链接另存为' : '右键链接另存为'}">${photo.url}</a></li>`);
+            });
+            $link_ul.on({
+                'mouseenter': function() {
+                    let $self = $(this);
+                    if ($self.attr('data-location') == 'photos') {
+                        $preview_img.attr('src', $self.attr('href').replace('/large/', '/mw690/')).parent().show(); //css('visibility', 'visible');
+                    }
+                },
+                'mouseleave': function() {
+                    $preview_img.attr('src', '').parent().hide(); //.css('visibility', 'hidden');
+                },
+                'click': function(e) {
+                    let $self = $(this), url = $self.attr('href'), fileName = $self.attr('download');
+                    if ($self.attr('data-location') == 'photos') {
+                        let notify_download_media = toastr.success('正在下载图片～', '', {
                             "progressBar": false,
                             "hideDuration": 0,
                             "showDuration": 0,
                             "timeOut": 0,
-                            "closeButton": false
-                        }).toggleClass('batch-download-list-tips', true);
-                    } else {
-                        $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个~`);
-                    }
-                    $wb_card[0].scrollIntoView({block: 'center'});
-                    let options = {};
-                    if (isWeiboDelete($wb_card, true)) {
-                        let mid = findWeiboCardMid($wb_card, false),
-                            omid = findWeiboCardMid($wb_card, true),
-                            card;
-                        card = getFavWeiboBackup(mid) || (mid != omid && getFavWeiboBackup(omid)) || null;
-                        if (card) {
-                            options = generateBatchDownloadOptionsFromBackup($wb_card, card);
-                        } else {
-                            dfd.resolve();
-                            return;
-                        }
-                    }
-                    $.extend(true, options, {
-                        isNeedConfirmDownload: false,
-                        callback:{
-                            beforeZipFileDownload_callback:function (zip_blob, files, names, location_info, options, zip, main_folder) {
-                                common_utils.downloadBlobFile(zip_blob, names.zipName + ".zip");
-                                failPhotoCount += (options.failFiles && options.failFiles.length || 0);
-                                dfd.resolve();
-                            }
-                        }
-                    });
-                    downloadWeiboCardPhotos($wb_card, options);
-                } else {
-                    dfd.reject();
-                }
-            }).done(function() {
-                $('#toast-container').children('.toast').not('.batch-download-list-tips').hide().remove();
-                $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个完成~`);
-                if ($wb_card.next().attr('node-type') === 'lazyload') {
-                    setTimeout(function(){
-                        downloadQueue.append($wb_card.next());
-                    }, 1500);
-                } else {
-                    downloadQueue.append($wb_card.next());
-                }
-            }).fail(function() {
-                $notify_start.hide().remove();
-                if (count > 0) {
-                    toastr.success('本页批量下载完成');
-                    if (failPhotoCount > 0) {
-                        toastr.error(`共 ${failPhotoCount} 张图片或视频下载失败~<br>链接已记录在photos_fail_list.txt`);
-                    }
-                } else {
-                    toastr.error('本页没有微博');
-                }
-            });
-        });
-        downloadQueue.append($('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]').eq(0));
-    });
-
-    var downloadWeiboCardPhotos = unsafeWindow.downloadWeiboCardPhotos = function (wb_card_node, options) {
-        var $wb_card = (wb_card_node instanceof $) ? wb_card_node : $(wb_card_node);
-        var config = {
-            "$wb_card": $wb_card,
-            "type": 2,
-            "isNeedConfirmDownload": true, // 下载前是否需要弹出确认框
-            "isNeedHasFiles": false,
-            "useQueueDownloadThreshold": 0,
-            "only_download_url": false, // 是否仅下载链接，true: 只下链接，false：下载文件和链接
-            "only_print_url": false, // 是否仅打印出链接
-            "sortByOrigin": true, // 照片按原页面显示顺序排序
-            "suffix": null,
-            "callback": {
-                "parseFiles_callback": function (location_info, options) {
-                    var $wb_detail = $wb_card.find(".WB_feed_detail .WB_detail");
-                    var photo_parse_index = 0;
-                    var video_parse_index = 0;
-                    var photo_arr = [];
-                    // 视频
-                    var $wb_video = $wb_detail.find(".WB_media_wrap .media_box .WB_video");
-                    if ($wb_video.length != 0) {
-                        var feedVideo = {};
-                        var feedVideoCoverImg = {};
-                        var video_data_str = $wb_video.attr("action-data");
-                        var isFeedVideo = video_data_str.match(/&?type=feedvideo\b/) ? true : false;
-                        if (isFeedVideo) {
-                            feedVideo.url = decodeURIComponent(video_data_str.match(/&video_src=([^&]+)/)[1]);
-                            feedVideo.url.indexOf("//") == 0 && (feedVideo.url = "https:" + feedVideo.url);
-                            feedVideo.fileName = feedVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");;
-                            feedVideo.folder_sort_index = ++video_parse_index;
-                            feedVideo.location = "videos";
-                            feedVideoCoverImg.url = decodeURIComponent(video_data_str.match(/&cover_img=([^&]+)/)[1]);
-                            feedVideoCoverImg.fileName = feedVideoCoverImg.url.match(/\/([^/]+)$/)[1];
-                            if (feedVideoCoverImg.url.indexOf("miaopai.com") != -1 || feedVideoCoverImg.url.indexOf("youku.com") != -1 ) {
-                                feedVideoCoverImg.url = feedVideoCoverImg.url;
-                                feedVideoCoverImg.url.indexOf("//") == 0 && (feedVideoCoverImg.url = "https:" + feedVideoCoverImg.url);
-                            } else {
-                                feedVideoCoverImg.url = "https://wx3.sinaimg.cn/large/" + feedVideoCoverImg.fileName;
-                            }
-                            feedVideoCoverImg.folder_sort_index = ++photo_parse_index;
-                            feedVideoCoverImg.location = "photos";
-                            photo_arr.push(feedVideo);
-                            photo_arr.push(feedVideoCoverImg);
-                        }
-                        var video_sources_str = $wb_video.attr("video-sources");
-                        if (video_sources_str) {
-                            // 取清晰度最高的
-                            var video_source_list = video_sources_str.split("&").filter(function (line) {
-                                return /^\d+=.+/.test(line);
-                            }).sort(function (a, b) {
-                                return parseInt(a.match(/^(\d+)=/)[1]) < parseInt(b.match(/^(\d+)=/)[1]) ? 1 : -1;
-                            }).map(function (url) {
-                                return decodeURIComponent(url.replace(/^\d+=/, ""));
-                            });
-                            if (video_source_list.length > 0) {
-                                feedVideo.url = video_source_list[0].replace('label=mp4_720p', 'label=dash_720p');
-                                feedVideo.fileName = feedVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
-                            }
-                        }
-                    }
-                    // 微博故事
-                    var $wb_story = $wb_detail.find(".WB_media_wrap .media_box .li_story");
-                    if ($wb_story.length != 0) {
-                        var weiboStoryVideo = {};
-                        var weibo_story_data_str = $wb_story.attr("action-data");
-                        if (/&gif_ourl=([^&]+)/.test(weibo_story_data_str)) {
-                            weiboStoryVideo.url = decodeURIComponent(RegExp.$1);
-                        } else if (/&gif_url=([^&]+)/.test(weibo_story_data_str)) {
-                            weiboStoryVideo.url = decodeURIComponent(RegExp.$1);
-                        }
-                        if (weiboStoryVideo.url) {
-                            weiboStoryVideo.fileName = weiboStoryVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
-                            weiboStoryVideo.folder_sort_index = ++video_parse_index;
-                            weiboStoryVideo.location = "videos";
-                            photo_arr.push(weiboStoryVideo);
-                        }
-                    }
-                    // 照片
-                    var $dataNode = $wb_detail.find(".WB_media_wrap .media_box ul");
-                    var pic_data_str = ($dataNode.children('li').length == 1 ? $dataNode.children('li') : $dataNode).attr("action-data");
-                    var pic_ids_str_m = pic_data_str && pic_data_str.match(/&pic_ids=([^&]+)/);
-                    if (pic_ids_str_m) {
-                        // livephoto
-                        var pic_video_ids = null;
-                        var pic_video_ids_str_m = pic_data_str.match(/&pic_video=([^&]+)/);
-                        if (pic_video_ids_str_m) {
-                            pic_video_ids = pic_video_ids_str_m[1].split(",").map(function (pair) {
-                                return pair.split(":")[1];
-                            });
-                        }
-                        var pic_thumb_str = pic_data_str.match(/&thumb_picSrc=([^&]+)/) && RegExp.$1;
-                        var parsePhotosFromIds = function (pic_ids, pic_video_ids) {
-                            $.each(pic_ids, function (i, photo_id) {
-                                var photo = {};
-                                photo.photo_id = photo_id;
-                                if (pic_thumb_str && pic_thumb_str.indexOf(photo_id + ".gif") != -1) { // 这里只能判断前九张图是否是gif
-                                    photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".gif";
-                                } else {
-                                    photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".jpg";
+                            "closeButton": false,
+                        });
+                        // GM_download({'url': url, 'name': fileName, 'saveAs': true});
+                        common_utils.ajaxDownload(url, function (blob) {
+                            if (blob) {
+                                if (blob.type === 'image/gif' && fileName.indexOf('.gif') === -1) {
+                                    fileName = fileName.replace(/\.[^.]+$/, '.gif');
                                 }
+                                common_utils.downloadBlobFile(blob, fileName);
+                            } else {
+                                toastr.error('请手动打开链接下载', '下载失败');
+                            }
+                            notify_download_media.css("display", "none").remove();
+                        });
+                        // e.stopImmediatePropagation();
+                        return false;
+                    }
+                }
+            }, 'li a');
+            $pop.on('click', '.copy-all-link', function() {
+                GM_setClipboard($link_ul[0].innerText);
+                toastr.success('复制全部链接成功');
+            }).on('click', '.download-all-link', function() {
+                options.isNeedConfirmDownload = true;
+                options.only_download_url = false;
+                options.only_print_url = false;
+                // if (options.files && !options.callback.parseFiles_callback) {
+                //     options.callback.parseFiles_callback = function () {
+                //         return options.files;
+                //     }
+                // }
+                resolver.downloadWeiboCardPhotos($wb_card, options);
+            });
+            if (removeOnClickBody) {
+                function remove(ev) {
+                    if(!ev.target.classList.contains('download-temp-node') && !$pop[0].contains(ev.target)){
+                        $pop.remove();
+                        $('body').off("click", remove);
+                    }
+                }
+                $('body').on("click", remove);
+            }
+            console.log('\n--★-- print -- ' + (options.names.folderName || card.name || (card.text ? card.text.substr(0, 15) : card.mid) || '照片链接') + ' ----★--');
+            console.table(JSON.parse(JSON.stringify(photos)), ['location', 'url']);
+            console.log('当url被省略可以复制下面的链接，也可从上面 >Array(' + photos.length + ') 查看');
+            $.each(photos, function (i, photo) {
+                console.log(photo.url);
+            });
+            return $pop;
+        }, // 
+        "findWeiboCardMid": function ($wb_card, findForwardIfHas) {
+            const resolver = this;
+            let mid, isForward = $wb_card.attr("isforward") == '1' ? true : false,
+                isWeiboDelete = $wb_card.children('.WB_empty').length != 0;
+            if (isForward && findForwardIfHas) {
+                mid = $wb_card.attr('omid') || $wb_card.find('.WB_feed_detail .WB_detail .WB_feed_expand .WB_expand').find('.WB_handle').attr('mid');
+            } else {
+                mid = $wb_card.attr('mid');
+                if (!mid && isWeiboDelete) {
+                    mid = $wb_card.children('.WB_empty').attr('mid');
+                }
+            }
+            return mid;
+        }, // 
+        "isWeiboDelete": function ($wb_card, findForwardIfHas) {
+            const resolver = this;
+            var isForward = $wb_card.attr("isforward") == '1';
+            if (isForward && findForwardIfHas) {
+                return $wb_card.find('.WB_expand > .WB_empty').length > 0;
+            } else {
+                return $wb_card.find('> .WB_empty').length > 0;
+            }
+        }, // 
+        "downloadWeiboCardPhotos": function (wb_card_node, options) {
+            const resolver = this;
+            var $wb_card = (wb_card_node instanceof $) ? wb_card_node : $(wb_card_node);
+            var config = {
+               "$wb_card": $wb_card,
+               "type": 2,
+               "isNeedConfirmDownload": true, // 下载前是否需要弹出确认框
+               "isNeedHasFiles": false,
+               "useQueueDownloadThreshold": 0,
+               "only_download_url": false, // 是否仅下载链接，true: 只下链接，false：下载文件和链接
+               "only_print_url": false, // 是否仅打印出链接
+               "sortByOrigin": true, // 照片按原页面显示顺序排序
+               "suffix": null,
+               "callback": {
+                   "parseFiles_callback": function (location_info, options) {
+                       var $wb_detail = $wb_card.find(".WB_feed_detail .WB_detail");
+                       var photo_parse_index = 0;
+                       var video_parse_index = 0;
+                       var photo_arr = [];
+                       // 视频
+                       var $wb_video = $wb_detail.find(".WB_media_wrap .media_box .WB_video");
+                       if ($wb_video.length != 0) {
+                           var feedVideo = {};
+                           var feedVideoCoverImg = {};
+                           var video_data_str = $wb_video.attr("action-data");
+                           var isFeedVideo = video_data_str.match(/&?type=feedvideo\b/) ? true : false;
+                           if (isFeedVideo) {
+                               feedVideo.url = decodeURIComponent(video_data_str.match(/&video_src=([^&]+)/)[1]);
+                               feedVideo.url.indexOf("//") == 0 && (feedVideo.url = "https:" + feedVideo.url);
+                               feedVideo.fileName = feedVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");;
+                               feedVideo.folder_sort_index = ++video_parse_index;
+                               feedVideo.location = "videos";
+                               feedVideoCoverImg.url = decodeURIComponent(video_data_str.match(/&cover_img=([^&]+)/)[1]);
+                               feedVideoCoverImg.fileName = feedVideoCoverImg.url.match(/\/([^/]+)$/)[1];
+                               if (feedVideoCoverImg.url.indexOf("miaopai.com") != -1 || feedVideoCoverImg.url.indexOf("youku.com") != -1 ) {
+                                   feedVideoCoverImg.url = feedVideoCoverImg.url;
+                                   feedVideoCoverImg.url.indexOf("//") == 0 && (feedVideoCoverImg.url = "https:" + feedVideoCoverImg.url);
+                               } else {
+                                   feedVideoCoverImg.url = "https://wx3.sinaimg.cn/large/" + feedVideoCoverImg.fileName;
+                               }
+                               feedVideoCoverImg.folder_sort_index = ++photo_parse_index;
+                               feedVideoCoverImg.location = "photos";
+                               photo_arr.push(feedVideo);
+                               photo_arr.push(feedVideoCoverImg);
+                           }
+                           var video_sources_str = $wb_video.attr("video-sources");
+                           if (video_sources_str) {
+                               // 取清晰度最高的
+                               var video_source_list = video_sources_str.split("&").filter(function (line) {
+                                   return /^\d+=.+/.test(line);
+                               }).sort(function (a, b) {
+                                   return parseInt(a.match(/^(\d+)=/)[1]) < parseInt(b.match(/^(\d+)=/)[1]) ? 1 : -1;
+                               }).map(function (url) {
+                                   return decodeURIComponent(url.replace(/^\d+=/, ""));
+                               });
+                               if (video_source_list.length > 0) {
+                                   feedVideo.url = video_source_list[0].replace('label=mp4_720p', 'label=dash_720p');
+                                   feedVideo.fileName = feedVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
+                               }
+                           }
+                       }
+                       // 微博故事
+                       var $wb_story = $wb_detail.find(".WB_media_wrap .media_box .li_story");
+                       if ($wb_story.length != 0) {
+                           var weiboStoryVideo = {};
+                           var weibo_story_data_str = $wb_story.attr("action-data");
+                           if (/&gif_ourl=([^&]+)/.test(weibo_story_data_str)) {
+                               weiboStoryVideo.url = decodeURIComponent(RegExp.$1);
+                           } else if (/&gif_url=([^&]+)/.test(weibo_story_data_str)) {
+                               weiboStoryVideo.url = decodeURIComponent(RegExp.$1);
+                           }
+                           if (weiboStoryVideo.url) {
+                               weiboStoryVideo.fileName = weiboStoryVideo.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
+                               weiboStoryVideo.folder_sort_index = ++video_parse_index;
+                               weiboStoryVideo.location = "videos";
+                               photo_arr.push(weiboStoryVideo);
+                           }
+                       }
+                       // 照片
+                       var $dataNode = $wb_detail.find(".WB_media_wrap .media_box ul");
+                       var pic_data_str = ($dataNode.children('li').length == 1 ? $dataNode.children('li') : $dataNode).attr("action-data");
+                       var pic_ids_str_m = pic_data_str && pic_data_str.match(/&pic_ids=([^&]+)/);
+                       if (pic_ids_str_m) {
+                           // livephoto
+                           var pic_video_ids = null;
+                           var pic_video_ids_str_m = pic_data_str.match(/&pic_video=([^&]+)/);
+                           if (pic_video_ids_str_m) {
+                               pic_video_ids = pic_video_ids_str_m[1].split(",").map(function (pair) {
+                                   return pair.split(":")[1];
+                               });
+                           }
+                           var pic_thumb_str = pic_data_str.match(/&thumb_picSrc=([^&]+)/) && RegExp.$1;
+                           var parsePhotosFromIds = function (pic_ids, pic_video_ids) {
+                               $.each(pic_ids, function (i, photo_id) {
+                                   var photo = {};
+                                   photo.photo_id = photo_id;
+                                   if (pic_thumb_str && pic_thumb_str.indexOf(photo_id + ".gif") != -1) { // 这里只能判断前九张图是否是gif
+                                       photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".gif";
+                                   } else {
+                                       photo.url = "https://wx3.sinaimg.cn/large/" + photo_id + ".jpg";
+                                   }
+                                   photo.folder_sort_index = ++photo_parse_index;
+                                   photo.location = "photos";
+                                   photo_arr.push(photo);
+                               });
+                               pic_video_ids && $.each(pic_video_ids, function (i, photo_video_id) {
+                                   var photo = {};
+                                   photo.video_id = photo_video_id;
+                                   photo.url = "https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/" + photo_video_id + ".mov&KID=unistore,videomovSrc";
+                                   photo.fileName = photo_video_id + ".mov";
+                                   photo.folder_sort_index = ++video_parse_index;
+                                   photo.location = "videos";
+                                   photo_arr.push(photo);
+                               });
+                           };
+                           if (/over9pic=1&/.test(pic_data_str) && !/isloadedover9pids=1/.test(pic_data_str)) {
+                               var deferred = $.Deferred();
+                               var isForward = $wb_card.attr("isforward") == "1" ? true : false;
+                               var mid;
+                               if (!isForward) {
+                                   mid = $wb_card.attr("mid")
+                               } else {
+                                   mid = $wb_card.find(".WB_feed_detail .WB_detail .WB_feed_expand .WB_expand .WB_handle").attr("mid");
+                               }
+                               ($.ajax || GM.xmlHttpRequest ||　GM_xmlHttpRequest)({
+                                   method: 'get',
+                                   url: 'https://' + document.location.host + '/aj/mblog/getover9pic?' + $.param({
+                                       "ajwvr": 6,
+                                       "mid": mid,
+                                       "__rnd": new Date().getTime(),
+                                   }),
+                                   responseType: 'json',
+                                   //headers: {
+                                   //    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36',
+                                   //    'cache-control': 'max-age=0',
+                                   //    'referer': document.location.href,
+                                   //    'cookie': document.cookie
+                                   //},
+                                   success/*onload*/: function(responseType) {
+                                        let response = responseType/*responseType.response*/,
+                                            picIds = pic_ids_str_m[1].split(",");
+                                        if (response.data && response.data.pids && Array.isArray(response.data.pids)) {
+                                            response.data.pids.forEach(function(overPid) {
+                                                if (picIds.indexOf(overPid) == -1) {
+                                                    picIds.push(overPid);
+                                                }
+                                            });
+                                        }
+                                        
+                                        parsePhotosFromIds(picIds, pic_video_ids);
+                                        deferred.resolve(photo_arr);
+                                   },
+                                   error: function() {
+                                        toastr.error('获取18图失败');
+                                        parsePhotosFromIds(pic_ids_str_m[1].split(","), pic_video_ids);
+                                        deferred.resolve(photo_arr);
+                                   }
+                               });
+                               // $wb_detail.find(".WB_media_wrap .media_box ul .WB_pic .W_icon_tag_9p").trigger("click");
+                               // setTimeout(function () {
+                               //     parsePhotosFromIds($wb_detail.find(".WB_media_wrap .media_box ul").attr("action-data").match(/&pic_ids=([^&]+)&/)[1].split(","));
+                               //     deferred.resolve(photo_arr);
+                               // }, 1500);
+                               return deferred; // 需要异步获取直接返回
+                           } else {
+                               parsePhotosFromIds(pic_ids_str_m[1].split(","), pic_video_ids);
+                           }
+                       } else {
+                           var $wb_pics = $wb_detail.find(".WB_media_wrap .media_box ul .WB_pic img");
+                           var regexp_search = /^(https?:\/\/(?:(?:ww|wx|ws|tvax|tva)\d+|wxt|wt)\.sinaimg\.(?:cn|com)\/)([\w\.]+)(\/.+)(?:\?.+)?$/i;
+                           $.each($wb_pics, function (i, img) {
+                               var photo = {};
+                               var thumb_url = img.src;
+                               photo.url = thumb_url;
+                               var m = thumb_url.match(regexp_search);
+                               if (m) {
+                                   if (m[2] != "large") {
+                                       photo.url = m[1] + "large" + m[3];
+                                   }
+                               }
+                               photo.folder_sort_index = ++photo_parse_index;
+                               photo.location = "photos";
+                               photo_arr.push(photo);
+                           });
+                       }
+                       return photo_arr;
+                   },
+                   "makeNames_callback": function (photos, location_info, options) {
+                       var names = {},
+                           isForward = $wb_card.attr("isforward") == "1" ? true : false; // 是否是转发
+                       names.infoName = "card_info.txt";
+                       names.infoValue = "";
+                       var printCardInfoToText = function (card) {
+                           let infoValue = '', isForward = card.forward === true;
+                           infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
+                           $.each(card, function (key, value) {
+                               if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
+                                   infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
+                               }
+                           });
+                           infoValue += "-----------------------------------" + "\r\n";
+                           $.each(card.user, function (key, value) {
+                               infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
+                           });
+                           infoValue += "-----------------------------------" + "\r\n";
+                           return infoValue;
+                       }
+                       var findCardInfo = function ($wb_detail, isForward) {
+                           if (resolver.isWeiboDelete($wb_card, isForward)) {
+                               return {'user': {}};
+                           }
+                           var $user_home_link = $wb_detail.find(".W_fb").eq(0);
+                           var $card_link = $wb_detail.find(".WB_from a").eq(0);
+                           var user = {};
+                           user.uid = $user_home_link.attr("usercard").match(/id=(\d+)/)[1];
+                           user.nickname = $user_home_link.attr("nick-name") || $user_home_link.text();
+                           user.home_link = $user_home_link.prop("href").replace(/\?.*/, "");
+                           var card = {};
+                           card.forward = isForward;
+                           card.link = $card_link.prop("href").replace(/\?.*/, "");
+                           card.id = card.link.match(/\d+\/([A-Za-z0-9]+)$/)[1];
+                           card.mid = isForward ? $wb_detail.find(".WB_handle").attr("mid") : $wb_detail.closest(".WB_cardwrap").attr("mid");
+                           card.date = $card_link.attr("title");
+                           card.date_timestamp = $card_link.attr("date");
+                           card.text = $wb_detail.find(".WB_text").eq(0).prop("innerText").replace(/[\u200b]+$/, "").replace(/^\s*|\s*$/g, "");
+                           var textLines = card.text.split(/\s{4,}|\s*\n\s*/);
+                           card.name = textLines[0];
+                           if (card.name.length <= 5 && textLines.length > 1) {
+                               card.name += textLines[1];
+                           }
+                           if (card.name.length > 30) {
+                               card.name = card.name.substring(0, 30);
+                           }
+                           card.photo_count = photos.length;
+                           var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
+                           if (tab_type_flag && /.*(favlistsearch|likelistoutbox)$/.test(tab_type_flag)) {
+                               var $page_list = $(".WB_cardwrap .W_pages .layer_menu_list ul");
+                               if ($page_list.length != 0) {
+                                   var maxPage = parseInt($page_list.find("li:nth-child(1) > a").text().match(/第(\d+)页/)[1]);
+                                   var currPage = parseInt($page_list.find(".cur > a").text().match(/第(\d+)页/)[1]);
+                                   card.countdown_page = maxPage - currPage + 1;
+                               }
+                           }
+                           card.user = user;
+                           card.photos = photos;
+                           return card;
+                       };
+                       names.card = findCardInfo($wb_card.find(".WB_feed_detail .WB_detail"), false); // 主贴的信息
+                       names.infoValue += printCardInfoToText(names.card);
+                       if (isForward) {
+                           // 转发的贴的信息
+                           names.forwardCard = findCardInfo($wb_card.find(".WB_feed_detail .WB_detail .WB_feed_expand .WB_expand"), true);
+                           names.infoValue += printCardInfoToText(names.forwardCard);
+                       }
+                       names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
+                               .replace(/\.\./g, "")
+                               .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
+                               .replace(/(^[_-]+)|([_-]+$)/g, "")
+                               .replace(/(^\s+)|(\s+$)/g, ""));
+                       names.folderName = names.zipName;
+                       names.prefix = null;
+                       names.suffix = options.suffix;
+                       return names;
+                   },
+                   "beforeFilesDownload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       const paddingZeroLength = String(photos.length).length,
+                             card = (names.forwardCard || names.card),
+                             sortByOrigin = options.sortByOrigin;
+                       $.each(photos, function (i, photo) {
+                           if (!photo.fileName) {
+                               photo.fileName = photo.url.substring(photo.url.lastIndexOf('/') + 1);
+                           }
+                           if (sortByOrigin) {
+                               photo.originName = photo.fileName;
+                               photo.fileName = card.user.uid + '_' + card.id + '_' + common_utils.paddingZero(photo.folder_sort_index, paddingZeroLength) + '_' + photo.originName;
+                           }
+                       });
+                       options.failFiles = undefined;
+                   },
+                   "beforeFileDownload_callback": function (photo, location_info, options, zipFileLength, zip, main_folder, folder) {
+                       if (options.only_download_url || options.only_print_url) {
+                           return false;
+                       } else {
+                           return true;
+                       }
+                   },
+                   "eachFileOnload_callback": function (blob, photo, location_info, options, zipFileLength, zip, main_folder, folder) {
+                       if (blob == null) {
+                           if (!options.failFiles) {
+                               options.failFiles = [];
+                           }
+                           options.failFiles.push(photo);
+                       } else if (photo.location == 'photos' && blob.type === 'image/gif' && photo.fileName.indexOf('.gif') === -1) {
+                           // 如果在超过9张图（over9pic）中含有gif，那么后缀需要根据content-type来判断
+                           let suffixRegex = /\.[^.]+$/, suffix = '.gif';
+                           photo.fileName = photo.fileName.replace(suffixRegex, suffix);
+                           photo.url = photo.url.replace(suffixRegex, suffix);
+                           photo.originName && (photo.originName = photo.originName.replace(suffixRegex, suffix));
+                       }
+                       return true;
+                   },
+                   "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       let photo_urls_str = "", failPhotoListStr = "", photo_url, failFile;
+                       // 链接列表文件
+                       $.each(photos, function (i, photo) {
+                           if (photo.location == 'videos' && photo.url.indexOf('f.video.weibocdn.com') != -1 && photo.url.indexOf('&Expires=') == -1 && !/\.mov$/.test(photo.fileName)) {
+                               photo_url = 'http://f.video.weibocdn.com/' + (photo.originName || photo.fileName) + '?KID=unistore,video';
+                           } else {
+                               photo_url = photo.url;
+                           }
+                           let line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo_url + "\r\n";
+                           photo_urls_str += line;
+                       });
+                       main_folder.file("photo_url_list.txt", photo_urls_str);
+                       // 失败链接列表文件
+                       if (options.failFiles && options.failFiles.length > 0) {
+                           toastr.error("共 " + options.failFiles.length + " 张下载失败，已记录在photos_fail_list.txt！", "", {
+                               "progressBar": false,
+                               timeOut: 0
+                           });
+                           for (let i in options.failFiles) {
+                               failFile = options.failFiles[i];
+                               failPhotoListStr += (failFile.location + "/" + failFile.fileName + "\t" + failFile.url + "\r\n");
+                           }
+                           main_folder.file("photos_fail_list.txt", failPhotoListStr);
+                       }
+                       // 如果只是打印链接
+                       if (options.only_print_url) {
+                           resolver.showPhotoLinksPopPanel($wb_card, options);
+                           toastr.success("已打印");
+                           return false;
+                       }
+                   }
+               }
+           };
+           if (options) {
+               $.extend(true, config, options);
+           }
+           batchDownload(config);
+        },
+        "addFavWeiboBackup": function ($wb_card) { // 保存备份
+            const resolver = this;
+            var options = {
+               "only_print_url": true,
+               "isNeedConfirmDownload": false,
+               "callback": {
+                   "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       let fav_backup_group, beforeSaveCard, saveCard = {}, rootCard = {}, user = {}, picNames = [], livePhotos = [], videos = [], card = names.forwardCard || names.card;
+                       if (!card.mid) {
+                           toastr.error('未找到mid，代码需要改进');
+                           return false;
+                       }
+                       fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {});
+                       saveCard.id = card.id;
+                       saveCard.mid = card.mid;
+                       saveCard.date = card.date;
+                       saveCard.text = card.text;
+                       saveCard.forward = card.forward;
+                       card.countdown_page !== undefined && (saveCard.countdown_page = card.countdown_page);
+                       user.uid = card.user.uid;
+                       user.nickname = card.user.nickname;
+                       $.each(photos, function (i, photo) {
+                           let originName = photo.originName || photo.fileName;
+                           if (photo.location == 'photos') {
+                               picNames.push(originName);
+                           } else if (photo.location == 'videos') {
+                               if (/\.mov$/.test(originName)) {
+                                   livePhotos.push(originName);
+                               } else if (photo.url.indexOf('f.video.weibocdn.com') != -1) { // 先存起来，可能以后有新办法
+                                   videos.push(originName);
+                               }
+                           }
+                       });
+                       saveCard.user = user;
+                       saveCard.photos = picNames;
+                       saveCard.livePhotos = livePhotos;
+                       saveCard.videos = videos;
+                       if (names.forwardCard) {
+                            beforeSaveCard = fav_backup_group[String(saveCard.mid)];
+                           // 如果被转发的微博执行了明确收藏操作就不覆盖该forward值
+                           if (saveCard.forward === true && beforeSaveCard && beforeSaveCard.forward === false) {
+                               saveCard.forward = false;
+                           }
+                           rootCard.root = true;
+                           rootCard.id = names.card.id;
+                           rootCard.mid = names.card.mid;
+                           rootCard.date = names.card.date;
+                           rootCard.text = names.card.text;
+                           rootCard.forward = names.forwardCard.mid;
+                           rootCard.user = {
+                               uid: names.card.user.uid,
+                               nickname: names.card.user.nickname,
+                           }
+                       }
+                       fav_backup_group[String(saveCard.mid)] = saveCard;
+                       if (names.forwardCard) {
+                           fav_backup_group[String(rootCard.mid)] = rootCard;
+                       }
+                       GM_setValue(Constants.KEY_FAV_BACKUP_GROUP, fav_backup_group);
+                       toastr.success("收藏备份到本地成功~");
+                       return false;
+                   },
+               }
+           };
+           resolver.downloadWeiboCardPhotos($wb_card, options);
+        },
+        "getFavWeiboBackup": function (mid) { // 获取备份
+            const resolver = this;
+            if (!mid) {
+                toastr.error('未找到mid，代码需要改进');
+                return;
+            }
+            let fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], rootCard, photos = [], photo_parse_index = 0, video_parse_index = 0;
+            if (card) {
+                if (card.root) { // 如果传入的mid只是一个转发mid
+                    rootCard = card;
+                    card = fav_backup_group[String(rootCard.forward)]; // 获取实际存储数据的mid
+                    if (card) {
+                        card.forward = true;
+                        card.rootCard = rootCard;
+                        if (!rootCard.name) {
+                            rootCard.name = (rootCard.text ? rootCard.text.substr(0, 15) : rootCard.mid);
+                        }
+                    } else {
+                        card = rootCard;
+                    }
+                }
+                card.photos && $.each(card.photos, function(i, fileName) {
+                    let photo = {url: 'https://wx3.sinaimg.cn/large/' + fileName, fileName: fileName, location: 'photos', folder_sort_index: ++photo_parse_index};
+                    photos.push(photo);
+                });
+                card.livePhotos && $.each(card.livePhotos, function(i, fileName) {
+                    let photo = {url: 'https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/' + fileName + '&KID=unistore,videomovSrc', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
+                    photos.push(photo);
+                });
+                // card.videos && $.each(card.videos, function(i, fileName) {
+                //     let photo = {url: 'http://f.video.weibocdn.com/' + fileName + '?KID=unistore,video', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
+                //     photos.push(photo);
+                // });
+                card.photos = photos;
+                delete card.livePhotos;
+                delete card.videos;
+                if (!card.name) {
+                    card.name = (card.text ? card.text.substr(0, 15) : card.mid);
+                }
+            }
+           return card;
+        },
+        "removeFavWeiboBackup": function (mid, cancleIfNotForward) { // 移除备份
+            const resolver = this;
+            if (!mid) {
+                toastr.error('未找到mid，代码需要改进');
+                return 400;
+            }
+            let fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], forwardCard;
+            if (card) {
+                if (card.root) { // 如果传入的mid只是一个转发mid
+                    forwardCard = fav_backup_group[String(card.forward)];
+                    if (forwardCard && forwardCard.forward === true) { // 如果实际存储数据的mid没有明确收藏操作，则一起删除
+                        delete fav_backup_group[String(forwardCard.mid)];
+                    }
+                }
+                if (card.root || cancleIfNotForward !== true || card.forward === true) {
+                    delete fav_backup_group[String(card.mid)];
+                    GM_setValue(Constants.KEY_FAV_BACKUP_GROUP, fav_backup_group);
+                    toastr.success("删除收藏本地备份成功~");
+                }
+                return 200;
+            } else {
+                return 404;
+            }
+        },
+        "generateBatchDownloadOptionsFromBackup": function ($wb_card, card) {
+            const resolver = this;
+            let options = {
+                files: card.photos,
+            }
+            if (resolver.isWeiboDelete($wb_card, true)) {
+                options.callback = {
+                    'parseFiles_callback': function () {
+                        return card.photos;
+                    },
+                    'makeNames_callback': function (files, location_info, options) {
+                        var names = {};
+                        names.infoName = "card_info.txt";
+                        names.infoValue = "";
+                        var printCardInfoToText = function (card) {
+                            let infoValue = '', isForward = card.forward === true;
+                            infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
+                            $.each(card, function (key, value) {
+                                if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
+                                    infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
+                                }
+                            });
+                            infoValue += "-----------------------------------" + "\r\n";
+                            $.each(card.user, function (key, value) {
+                                infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
+                            });
+                            infoValue += "-----------------------------------" + "\r\n";
+                            return infoValue;
+                        }
+                        card.link = 'https://weibo.com/' + card.user.uid + '/' + card.id;
+                        card.user.home_link = 'https://weibo.com/u/' + card.user.uid;
+                        if (card.rootCard) {
+                            card.rootCard.link = 'https://weibo.com/' + card.rootCard.user.uid + '/' + card.rootCard.id;
+                            card.rootCard.user.home_link = 'https://weibo.com/u/' + card.rootCard.user.uid;
+                            names.card = card.rootCard;
+                            names.forwardCard = card;
+                        } else {
+                            names.card = card;
+                        }
+                         // 主贴的信息
+                        names.infoValue += printCardInfoToText(names.card);
+                        if (names.forwardCard) { // 被转发贴的信息
+                            names.infoValue += printCardInfoToText(names.forwardCard);
+                        }
+                        names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
+                             .replace(/\.\./g, "")
+                             .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
+                             .replace(/(^[_-]+)|([_-]+$)/g, "")
+                             .replace(/(^\s+)|(\s+$)/g, ""));
+                        names.folderName = names.zipName;
+                        names.prefix = null;
+                        names.suffix = options.suffix;
+                        return names;
+                    },
+                };
+            }
+            return options;
+        },
+        "batchDownloadPageWeiboCard": function() {
+            const resolver = this;
+            if (!/weibo\.com\/(\d+\/profile|\d+(\?|$)|u\/\d+(\?|$)|fav(\?|$)|like\/outbox(\?|$))/.test(document.location.href)) {
+                toastr.error('只支持在用户主页下载');
+                return;
+            }
+            if (!confirm('确定要下载本页所有微博吗？')) {
+                return;
+            }
+            let $notify_start = toastr.success("准备批量下载本页~", "", {
+                "progressBar": false,
+                "hideDuration": 0,
+                "showDuration": 0,
+                "timeOut": 0,
+                "closeButton": false
+            }).toggleClass('batch-download-list-tips', true), count = 0, failPhotoCount = 0;
+            const downloadQueue = new common_utils.TaskQueue(function($wb_card) {
+                return $.Deferred(function(dfd) {
+                    if ($wb_card.length > 0 && ($wb_card.attr('action-type') === 'feed_list_item' || $wb_card.children().eq(0).attr('action-type') === 'feed_list_item')) {
+                        count++;
+                        if ($notify_start.length === 0 || !$notify_start.is(':visible')) {
+                            $notify_start = toastr.success("本页批量下载第 1 个~", "", {
+                                "progressBar": false,
+                                "hideDuration": 0,
+                                "showDuration": 0,
+                                "timeOut": 0,
+                                "closeButton": false
+                            }).toggleClass('batch-download-list-tips', true);
+                        } else {
+                            $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个~`);
+                        }
+                        $wb_card[0].scrollIntoView({block: 'center'});
+                        let options = {};
+                        if (resolver.isWeiboDelete($wb_card, true)) {
+                            let mid = resolver.findWeiboCardMid($wb_card, false),
+                                omid = resolver.findWeiboCardMid($wb_card, true),
+                                card;
+                            card = resolver.getFavWeiboBackup(mid) || (mid != omid && resolver.getFavWeiboBackup(omid)) || null;
+                            if (card) {
+                                options = resolver.generateBatchDownloadOptionsFromBackup($wb_card, card);
+                            } else {
+                                dfd.resolve();
+                                return;
+                            }
+                        }
+                        $.extend(true, options, {
+                            isNeedConfirmDownload: false,
+                            callback:{
+                                beforeZipFileDownload_callback:function (zip_blob, files, names, location_info, options, zip, main_folder) {
+                                    common_utils.downloadBlobFile(zip_blob, names.zipName + ".zip");
+                                    failPhotoCount += (options.failFiles && options.failFiles.length || 0);
+                                    dfd.resolve();
+                                }
+                            }
+                        });
+                        resolver.downloadWeiboCardPhotos($wb_card, options);
+                    } else {
+                        dfd.reject();
+                    }
+                }).done(function() {
+                    $('#toast-container').children('.toast').not('.batch-download-list-tips').hide().remove();
+                    $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个完成~`);
+                    if ($wb_card.next().attr('node-type') === 'lazyload') {
+                        setTimeout(function(){
+                            downloadQueue.append($wb_card.next());
+                        }, 1500);
+                    } else {
+                        downloadQueue.append($wb_card.next());
+                    }
+                }).fail(function() {
+                    $notify_start.hide().remove();
+                    if (count > 0) {
+                        toastr.success('本页批量下载完成');
+                        if (failPhotoCount > 0) {
+                            toastr.error(`共 ${failPhotoCount} 张图片或视频下载失败~<br>链接已记录在photos_fail_list.txt`);
+                        }
+                    } else {
+                        toastr.error('本页没有微博');
+                    }
+                });
+            });
+            downloadQueue.append($('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]').eq(0));
+        },
+        "showFavWeiboRestoreBtn": function () {
+             $('.WB_cardwrap:not(.has-set-restore-btn)').find('> .WB_empty, .WB_expand > .WB_empty').find('.WB_innerwrap p')
+            .prepend('<button class="restore-backup-fav-weibo" style="margin-right:15px;cursor:pointer;" title="made by Jeffrey.Deng">查看备份</button>').closest('.WB_cardwrap:not(.has-set-restore-btn)').addClass('has-set-restore-btn');
+        },
+        "findFeedCardItemList": function () {
+            var list = $('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]');
+            return list.length > 0 ? list : $('.WB_cardwrap');
+        },
+        "findCardArrowDown": function () {
+            return $(".WB_cardwrap .WB_screen .ficon_arrow_down");
+        },
+        "findElemClosestCard": function (elem) {
+            return $(elem).closest(".WB_cardwrap");
+        },
+        "findCardPhotoDownloadBtn": function() {
+            return $('.WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_download');
+        },
+        "findDeletedCard": function() {
+            return $('.WB_cardwrap:not(.has-set-restore-btn) > .WB_empty, .WB_cardwrap:not(.has-set-restore-btn) .WB_expand > .WB_empty');
+        },
+        "findCardFavBtn": function() {
+            return $('.WB_cardwrap .WB_feed_handle a[action-type="fl_favorite"]');
+        },
+        "findCardShowBackupBtn": function() {
+            return $('.WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_show_fav_weibo_backup');
+        },
+        "findCardRebuildBackupBtn": function() {
+            return $('.WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_rebuild_fav_weibo_backup');
+        },
+        "findCardRestoreBackupBtn": function() {
+            return $('.WB_cardwrap .restore-backup-fav-weibo');
+        },
+});
+
+const NewWeiboResolver = {};
+
+Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
+        "addDownloadBtnToWeiboCard": function ($wb_card) {
+            setTimeout(function () {
+                var $card_btn_list = $wb_card.find('.woo-pop-wrap .woo-pop-wrap-main');
+                if ($card_btn_list.find(".WB_card_photos_download").length == 0) {
+                    $card_btn_list.append('<li class="woo-box-flex woo-box-alignCenter woo-pop-item-main WB_card_photos_download" title="下载文件和链接"><a>打包下载</a></li>');
+                    $card_btn_list.append('<li class="woo-box-flex woo-box-alignCenter woo-pop-item-main WB_card_photos_download WB_card_photos_download_only_download_url" title="仅下载链接，不下载文件"><a>下载链接</a></li>');
+                    $card_btn_list.append('<li class="woo-box-flex woo-box-alignCenter woo-pop-item-main WB_card_photos_download WB_card_photos_download_only_print_url" title="仅打印出链接"><a>打印链接</a></li>');
+                    $card_btn_list.append('<li class="woo-box-flex woo-box-alignCenter woo-pop-item-main WB_card_photos_show_fav_weibo_backup" title="查看当前微博是否有备份"><a>显示备份</a></li>');
+                    $card_btn_list.append('<li class="woo-box-flex woo-box-alignCenter woo-pop-item-main WB_card_photos_rebuild_fav_weibo_backup" title="重新备份当前微博"><a>重新备份</a></li>');
+                }
+                $card_btn_list.children().each(function (i, li) {
+                    if (li.innerText == '收藏' || li.innerText == '取消收藏') {
+                        debugger;
+                        $(li).addClass('fav_btn');
+                    }
+                });
+            }, 500);
+            if (!$wb_card.data('weibo')) {
+                var $author_head = $wb_card.find('> div > header > .woo-box-item-flex > div > div.woo-box-flex.woo-box-alignCenter.woo-box-justifyCenter > a');
+                var mblogid = $author_head.attr("href").replace(/\?[^?]*$/,'').match(/\/([a-zA-Z0-9]+)$/) && RegExp.$1;
+                $.get('https://' + document.location.host + '/ajax/statuses/show?id=' + mblogid, function (resp) {
+                    $wb_card.data('weibo', resp);
+                });
+            }
+        },
+        "showPhotoLinksPopPanel": function ($wb_card, options, removeOnClickBody) {
+            const resolver = this;
+            options.names || (options.names = {});
+            options.callback || (options.callback = {});
+            const $pop = $('<div class="W_layer W_layer_pop download-link-pop"><div class="content link-list">' +
+                           '<div class="sidebar"><span class="sidebar-btn download-all-link" title="全部打包下载">打包下载</span><span class="sidebar-btn copy-all-link" title="复制所有链接">全部复制</span></div>' +
+                           '<ul></ul></div><div class="content preview"><img></div></div>'),
+                  $link_ul = $pop.find('.link-list ul'),
+                  $preview_img = $pop.find('.preview img'),
+                  photos = options.files, card = options.names.card || options.names.forwardCard || {};
+            removeOnClickBody = removeOnClickBody !== false;
+            $wb_card.append($pop);
+            $.each(photos, function(i, photo) {
+                $link_ul.append(`<li><a href="${photo.url}" target="_blank" download="${photo.fileName}" data-location="${photo.location}" class="clearfix" title="${photo.location == 'photos' ? '点击下载，右键链接另存为' : '右键链接另存为'}">${photo.url}</a></li>`);
+            });
+            $link_ul.on({
+                'mouseenter': function() {
+                    let $self = $(this);
+                    if ($self.attr('data-location') == 'photos') {
+                        $preview_img.attr('src', $self.attr('href').replace('/large/', '/mw690/')).parent().show(); //css('visibility', 'visible');
+                    }
+                },
+                'mouseleave': function() {
+                    $preview_img.attr('src', '').parent().hide(); //css('visibility', 'hidden');
+                },
+                'click': function(e) {
+                    let $self = $(this), url = $self.attr('href'), fileName = $self.attr('download');
+                    if ($self.attr('data-location') == 'photos') {
+                        let notify_download_media = toastr.success('正在下载图片～', '', {
+                            "progressBar": false,
+                            "hideDuration": 0,
+                            "showDuration": 0,
+                            "timeOut": 0,
+                            "closeButton": false,
+                        });
+                        // GM_download({'url': url, 'name': fileName, 'saveAs': true});
+                        common_utils.ajaxDownload(url, function (blob) {
+                            if (blob) {
+                                if (blob.type === 'image/gif' && fileName.indexOf('.gif') === -1) {
+                                    fileName = fileName.replace(/\.[^.]+$/, '.gif');
+                                }
+                                common_utils.downloadBlobFile(blob, fileName);
+                            } else {
+                                toastr.error('请手动打开链接下载', '下载失败');
+                            }
+                            notify_download_media.css("display", "none").remove();
+                        });
+                        // e.stopImmediatePropagation();
+                        return false;
+                    }
+                }
+            }, 'li a');
+            $pop.on('click', '.copy-all-link', function() {
+                GM_setClipboard($link_ul[0].innerText);
+                toastr.success('复制全部链接成功');
+            }).on('click', '.download-all-link', function() {
+                options.isNeedConfirmDownload = true;
+                options.only_download_url = false;
+                options.only_print_url = false;
+                // if (options.files && !options.callback.parseFiles_callback) {
+                //     options.callback.parseFiles_callback = function () {
+                //         return options.files;
+                //     }
+                // }
+                resolver.downloadWeiboCardPhotos($wb_card, options);
+            });
+            if (removeOnClickBody) {
+                function remove(ev) {
+                    if(!ev.target.classList.contains('woo-font--angleDown') && !ev.target.classList.contains('download-temp-node') && !$pop[0].contains(ev.target)){
+                        $pop.remove();
+                        $('body').off("click", remove);
+                    }
+                }
+                $('body').on("click", remove);
+            }
+            console.log('\n--★-- print -- ' + (options.names.folderName || card.name || (card.text ? card.text.substr(0, 15) : card.mid) || '照片链接') + ' ----★--');
+            console.table(JSON.parse(JSON.stringify(photos)), ['location', 'url']);
+            console.log('当url被省略可以复制下面的链接，也可从上面 >Array(' + photos.length + ') 查看');
+            $.each(photos, function (i, photo) {
+                console.log(photo.url);
+            });
+            return $pop;
+        }, // 
+        "findWeiboCardMid": function ($wb_card, findForwardIfHas) {
+            const resolver = this;
+            let mid, weibo = $wb_card.data('weibo'),
+               isForward = weibo.retweeted_status ? true : false; // 是否是转发
+            if (isForward && findForwardIfHas) {
+                mid = weibo.retweeted_status.mid || weibo.mid;
+            } else {
+                mid = weibo.mid
+            }
+            return mid;
+        }, // 
+        "isWeiboDelete": function ($wb_card, findForwardIfHas) {
+            let mid, weibo = $wb_card.data('weibo'),
+               isForward = weibo.retweeted_status ? true : false; // 是否是转发
+            if (isForward && weibo.retweeted_status.deleted == '1') {
+                return true;
+            }
+            return false;
+        }, // 
+        "downloadWeiboCardPhotos": function (wb_card_node, options) {
+            const resolver = this;
+            var $wb_card = (wb_card_node instanceof $) ? wb_card_node : $(wb_card_node);
+            var config = {
+               "$wb_card": $wb_card,
+               "type": 2,
+               "isNeedConfirmDownload": true, // 下载前是否需要弹出确认框
+               "isNeedHasFiles": false,
+               "useQueueDownloadThreshold": 0,
+               "only_download_url": false, // 是否仅下载链接，true: 只下链接，false：下载文件和链接
+               "only_print_url": false, // 是否仅打印出链接
+               "sortByOrigin": true, // 照片按原页面显示顺序排序
+               "suffix": null,
+               "callback": {
+                   "parseFiles_callback": function (location_info, options) {
+                       var $author_head = $wb_card.find('> div > header > .woo-box-item-flex > div > div.woo-box-flex.woo-box-alignCenter.woo-box-justifyCenter > a');
+                       var mblogid = $author_head.attr("href").replace(/\?[^?]*$/,'').match(/\/([a-zA-Z0-9]+)$/) && RegExp.$1;
+                       var photo_parse_index = 0;
+                       var video_parse_index = 0;
+                       var photo_arr = [];
+                       var parsePhotosFromIds = function (weibo, dfd) {
+                            weibo = weibo.retweeted_status || weibo;
+                            weibo.pic_infos && $.each(weibo.pic_infos, function(id, p) {
+                                var photo = {};
+                                photo.photo_id = id;
+                                photo.url = p.largest.url;
                                 photo.folder_sort_index = ++photo_parse_index;
                                 photo.location = "photos";
                                 photo_arr.push(photo);
+                                if (p.type == "livephoto") {
+                                   var photo = {}, photo_video_id = p.fid;
+                                   photo.video_id = photo_video_id;
+                                   photo.url = "https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/" + photo_video_id + ".mov&KID=unistore,videomovSrc";
+                                   photo.fileName = photo_video_id + ".mov";
+                                   photo.folder_sort_index = ++video_parse_index;
+                                   photo.location = "videos";
+                                   photo_arr.push(photo);
+                                }
                             });
-                            pic_video_ids && $.each(pic_video_ids, function (i, photo_video_id) {
-                                var photo = {};
-                                photo.video_id = photo_video_id;
-                                photo.url = "https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/" + photo_video_id + ".mov&KID=unistore,videomovSrc";
-                                photo.fileName = photo_video_id + ".mov";
-                                photo.folder_sort_index = ++video_parse_index;
-                                photo.location = "videos";
-                                photo_arr.push(photo);
-                            });
+                            if (weibo.page_info && weibo.page_info.object_type=='video') {
+                                   weibo.page_info.media_info.playback_list.sort(function (a, b) {
+                                        return a.meta.quality_index > b.meta.quality_index ? -1 : 1;
+                                   });
+                                   var video = {};
+                                   video.video_id = weibo.page_info.page_id;
+                                   video.url = weibo.page_info.media_info.playback_list[0].play_info.url;
+                                   video.fileName = video.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
+                                   video.folder_sort_index = ++video_parse_index;
+                                   video.location = "videos";
+                                   photo_arr.push(video);
+                                   var photo = {};
+                                   weibo.page_info.page_pic.match(/\/(([^\/]+)\.[a-zA-Z0-9]+)$/);
+                                   photo.photo_id = RegExp.$2;
+                                   photo.url = 'https://wx2.sinaimg.cn/large/' + RegExp.$1;
+                                   photo.folder_sort_index = ++photo_parse_index;
+                                   photo.location = "photos";
+                                   photo_arr.push(photo);
+                            }
+                            dfd.resolve(photo_arr);
                         };
-                        if (/over9pic=1&/.test(pic_data_str) && !/isloadedover9pids=1/.test(pic_data_str)) {
-                            var deferred = $.Deferred();
-                            var isForward = $wb_card.attr("isforward") == "1" ? true : false;
-                            var mid;
-                            if (!isForward) {
-                                mid = $wb_card.attr("mid")
+                        return $.Deferred(function (dfd) {
+                            let weibo = $wb_card.data('weibo');
+                            if (weibo) {
+                                parsePhotosFromIds(weibo, dfd);
                             } else {
-                                mid = $wb_card.find(".WB_feed_detail .WB_detail .WB_feed_expand .WB_expand .WB_handle").attr("mid");
-                            }
-                            (GM.xmlHttpRequest ||　GM_xmlHttpRequest)({
-                                method: 'get',
-                                url: 'https://weibo.com/aj/mblog/getover9pic?' + $.param({
-                                    "ajwvr": 6,
-                                    "mid": mid,
-                                    "__rnd": new Date().getTime(),
-                                }),
-                                responseType: 'json',
-                                onload: function(responseType) {
-                                    let response = responseType.response,
-                                        picIds = pic_ids_str_m[1].split(",");
-                                    response.data.pids.forEach(function(overPid) {
-                                        if (picIds.indexOf(overPid) == -1) {
-                                            picIds.push(overPid);
-                                        }
-                                    });
-                                    parsePhotosFromIds(picIds, pic_video_ids);
-                                    deferred.resolve(photo_arr);
-                                },
-                                onerror: function() {
-                                    toastr.error('获取18图失败');
-                                    parsePhotosFromIds(pic_ids_str_m[1].split(","), pic_video_ids);
-                                    deferred.resolve(photo_arr);
-                                }
-                            });
-                            // $wb_detail.find(".WB_media_wrap .media_box ul .WB_pic .W_icon_tag_9p").trigger("click");
-                            // setTimeout(function () {
-                            //     parsePhotosFromIds($wb_detail.find(".WB_media_wrap .media_box ul").attr("action-data").match(/&pic_ids=([^&]+)&/)[1].split(","));
-                            //     deferred.resolve(photo_arr);
-                            // }, 1500);
-                            return deferred; // 需要异步获取直接返回
-                        } else {
-                            parsePhotosFromIds(pic_ids_str_m[1].split(","), pic_video_ids);
-                        }
-                    } else {
-                        var $wb_pics = $wb_detail.find(".WB_media_wrap .media_box ul .WB_pic img");
-                        var regexp_search = /^(https?:\/\/(?:(?:ww|wx|ws|tvax|tva)\d+|wxt|wt)\.sinaimg\.(?:cn|com)\/)([\w\.]+)(\/.+)(?:\?.+)?$/i;
-                        $.each($wb_pics, function (i, img) {
-                            var photo = {};
-                            var thumb_url = img.src;
-                            photo.url = thumb_url;
-                            var m = thumb_url.match(regexp_search);
-                            if (m) {
-                                if (m[2] != "large") {
-                                    photo.url = m[1] + "large" + m[3];
-                                }
-                            }
-                            photo.folder_sort_index = ++photo_parse_index;
-                            photo.location = "photos";
-                            photo_arr.push(photo);
-                        });
-                    }
-                    return photo_arr;
-                },
-                "makeNames_callback": function (photos, location_info, options) {
-                    var names = {},
-                        isForward = $wb_card.attr("isforward") == "1" ? true : false; // 是否是转发
-                    names.infoName = "card_info.txt";
-                    names.infoValue = "";
-                    var printCardInfoToText = function (card) {
-                        let infoValue = '', isForward = card.forward === true;
-                        infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
-                        $.each(card, function (key, value) {
-                            if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
-                                infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
+                                $.get('https://' + document.location.host + '/ajax/statuses/show?id=' + mblogid, function (resp) {
+                                    $wb_card.data('weibo', resp);
+                                    parsePhotosFromIds(resp, dfd);
+                                });
                             }
                         });
-                        infoValue += "-----------------------------------" + "\r\n";
-                        $.each(card.user, function (key, value) {
-                            infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
-                        });
-                        infoValue += "-----------------------------------" + "\r\n";
-                        return infoValue;
-                    }
-                    var findCardInfo = function ($wb_detail, isForward) {
-                        if (isWeiboDelete($wb_card, isForward)) {
-                            return {'user': {}};
-                        }
-                        var $user_home_link = $wb_detail.find(".W_fb").eq(0);
-                        var $card_link = $wb_detail.find(".WB_from a").eq(0);
-                        var user = {};
-                        user.uid = $user_home_link.attr("usercard").match(/id=(\d+)/)[1];
-                        user.nickname = $user_home_link.attr("nick-name") || $user_home_link.text();
-                        user.home_link = $user_home_link.prop("href").replace(/\?.*/, "");
-                        var card = {};
-                        card.forward = isForward;
-                        card.link = $card_link.prop("href").replace(/\?.*/, "");
-                        card.id = card.link.match(/\d+\/([A-Za-z0-9]+)$/)[1];
-                        card.mid = isForward ? $wb_detail.find(".WB_handle").attr("mid") : $wb_detail.closest(".WB_cardwrap").attr("mid");
-                        card.date = $card_link.attr("title");
-                        card.date_timestamp = $card_link.attr("date");
-                        card.text = $wb_detail.find(".WB_text").eq(0).prop("innerText").replace(/[\u200b]+$/, "").replace(/^\s*|\s*$/g, "");
-                        var textLines = card.text.split(/\s{4,}|\s*\n\s*/);
-                        card.name = textLines[0];
-                        if (card.name.length <= 5 && textLines.length > 1) {
-                            card.name += textLines[1];
-                        }
-                        if (card.name.length > 30) {
-                            card.name = card.name.substring(0, 30);
-                        }
-                        card.photo_count = photos.length;
-                        var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
-                        if (tab_type_flag && /.*(favlistsearch|likelistoutbox)$/.test(tab_type_flag)) {
-                            var $page_list = $(".WB_cardwrap .W_pages .layer_menu_list ul");
-                            if ($page_list.length != 0) {
-                                var maxPage = parseInt($page_list.find("li:nth-child(1) > a").text().match(/第(\d+)页/)[1]);
-                                var currPage = parseInt($page_list.find(".cur > a").text().match(/第(\d+)页/)[1]);
-                                card.countdown_page = maxPage - currPage + 1;
-                            }
-                        }
-                        card.user = user;
-                        card.photos = photos;
-                        return card;
-                    };
-                    names.card = findCardInfo($wb_card.find(".WB_feed_detail .WB_detail"), false); // 主贴的信息
-                    names.infoValue += printCardInfoToText(names.card);
-                    if (isForward) {
-                        // 转发的贴的信息
-                        names.forwardCard = findCardInfo($wb_card.find(".WB_feed_detail .WB_detail .WB_feed_expand .WB_expand"), true);
-                        names.infoValue += printCardInfoToText(names.forwardCard);
-                    }
-                    names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
-                            .replace(/\.\./g, "")
-                            .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
-                            .replace(/(^[_-]+)|([_-]+$)/g, "")
-                            .replace(/(^\s+)|(\s+$)/g, ""));
-                    names.folderName = names.zipName;
-                    names.prefix = null;
-                    names.suffix = options.suffix;
-                    return names;
-                },
-                "beforeFilesDownload_callback": function (photos, names, location_info, options, zip, main_folder) {
-                    const paddingZeroLength = String(photos.length).length,
-                          card = (names.forwardCard || names.card),
-                          sortByOrigin = options.sortByOrigin;
-                    $.each(photos, function (i, photo) {
-                        if (!photo.fileName) {
-                            photo.fileName = photo.url.substring(photo.url.lastIndexOf('/') + 1);
-                        }
-                        if (sortByOrigin) {
-                            photo.originName = photo.fileName;
-                            photo.fileName = card.user.uid + '_' + card.id + '_' + common_utils.paddingZero(photo.folder_sort_index, paddingZeroLength) + '_' + photo.originName;
-                        }
-                    });
-                    options.failFiles = undefined;
-                },
-                "beforeFileDownload_callback": function (photo, location_info, options, zipFileLength, zip, main_folder, folder) {
-                    if (options.only_download_url || options.only_print_url) {
-                        return false;
-                    } else {
-                        return true;
-                    }
-                },
-                "eachFileOnload_callback": function (blob, photo, location_info, options, zipFileLength, zip, main_folder, folder) {
-                    if (blob == null) {
-                        if (!options.failFiles) {
-                            options.failFiles = [];
-                        }
-                        options.failFiles.push(photo);
-                    } else if (photo.location == 'photos' && blob.type === 'image/gif' && photo.fileName.indexOf('.gif') === -1) {
-                        // 如果在超过9张图（over9pic）中含有gif，那么后缀需要根据content-type来判断
-                        let suffixRegex = /\.[^.]+$/, suffix = '.gif';
-                        photo.fileName = photo.fileName.replace(suffixRegex, suffix);
-                        photo.url = photo.url.replace(suffixRegex, suffix);
-                        photo.originName && (photo.originName = photo.originName.replace(suffixRegex, suffix));
-                    }
-                    return true;
-                },
-                "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
-                    let photo_urls_str = "", failPhotoListStr = "", photo_url, failFile;
-                    // 链接列表文件
-                    $.each(photos, function (i, photo) {
-                        if (photo.location == 'videos' && photo.url.indexOf('f.video.weibocdn.com') != -1 && photo.url.indexOf('&Expires=') == -1 && !/\.mov$/.test(photo.fileName)) {
-                            photo_url = 'http://f.video.weibocdn.com/' + (photo.originName || photo.fileName) + '?KID=unistore,video';
-                        } else {
-                            photo_url = photo.url;
-                        }
-                        let line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo_url + "\r\n";
-                        photo_urls_str += line;
-                    });
-                    main_folder.file("photo_url_list.txt", photo_urls_str);
-                    // 失败链接列表文件
-                    if (options.failFiles && options.failFiles.length > 0) {
-                        toastr.error("共 " + options.failFiles.length + " 张下载失败，已记录在photos_fail_list.txt！", "", {
-                            "progressBar": false,
-                            timeOut: 0
-                        });
-                        for (let i in options.failFiles) {
-                            failFile = options.failFiles[i];
-                            failPhotoListStr += (failFile.location + "/" + failFile.fileName + "\t" + failFile.url + "\r\n");
-                        }
-                        main_folder.file("photos_fail_list.txt", failPhotoListStr);
-                    }
-                    // 如果只是打印链接
-                    if (options.only_print_url) {
-                        showPhotoLinksPopPanel($wb_card, options);
-                        toastr.success("已打印");
-                        return false;
-                    }
-                }
-            }
-        };
-        if (options) {
-            $.extend(true, config, options);
-        }
-        batchDownload(config);
-    };
-
-    // 收藏备份
-    const KEY_FAV_BACKUP_GROUP = 'weibo_fav_backup_group';
-    const KEY_SETTING_AUTO_BACKUP_FAV = 'weibo_setting_auto_backup_fav';
-    let switch_auto_backup_fav_id;
-    var addFavWeiboBackup = function ($wb_card) { // 保存备份
-        var options = {
-            "only_print_url": true,
-            "isNeedConfirmDownload": false,
-            "callback": {
-                "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
-                    let fav_backup_group, beforeSaveCard, saveCard = {}, rootCard = {}, user = {}, picNames = [], livePhotos = [], videos = [], card = names.forwardCard || names.card;
-                    if (!card.mid) {
-                        toastr.error('未找到mid，代码需要改进');
-                        return false;
-                    }
-                    fav_backup_group = GM_getValue(KEY_FAV_BACKUP_GROUP, {});
-                    saveCard.id = card.id;
-                    saveCard.mid = card.mid;
-                    saveCard.date = card.date;
-                    saveCard.text = card.text;
-                    saveCard.forward = card.forward;
-                    card.countdown_page !== undefined && (saveCard.countdown_page = card.countdown_page);
-                    user.uid = card.user.uid;
-                    user.nickname = card.user.nickname;
-                    $.each(photos, function (i, photo) {
-                        let originName = photo.originName || photo.fileName;
-                        if (photo.location == 'photos') {
-                            picNames.push(originName);
-                        } else if (photo.location == 'videos') {
-                            if (/\.mov$/.test(originName)) {
-                                livePhotos.push(originName);
-                            } else if (photo.url.indexOf('f.video.weibocdn.com') != -1) { // 先存起来，可能以后有新办法
-                                videos.push(originName);
-                            }
-                        }
-                    });
-                    saveCard.user = user;
-                    saveCard.photos = picNames;
-                    saveCard.livePhotos = livePhotos;
-                    saveCard.videos = videos;
-                    if (names.forwardCard) {
-                         beforeSaveCard = fav_backup_group[String(saveCard.mid)];
-                        // 如果被转发的微博执行了明确收藏操作就不覆盖该forward值
-                        if (saveCard.forward === true && beforeSaveCard && beforeSaveCard.forward === false) {
-                            saveCard.forward = false;
-                        }
-                        rootCard.root = true;
-                        rootCard.id = names.card.id;
-                        rootCard.mid = names.card.mid;
-                        rootCard.date = names.card.date;
-                        rootCard.text = names.card.text;
-                        rootCard.forward = names.forwardCard.mid;
-                        rootCard.user = {
-                            uid: names.card.user.uid,
-                            nickname: names.card.user.nickname,
-                        }
-                    }
-                    fav_backup_group[String(saveCard.mid)] = saveCard;
-                    if (names.forwardCard) {
-                        fav_backup_group[String(rootCard.mid)] = rootCard;
-                    }
-                    GM_setValue(KEY_FAV_BACKUP_GROUP, fav_backup_group);
-                    toastr.success("收藏备份到本地成功~");
-                    return false;
-                },
-            }
-        };
-        downloadWeiboCardPhotos($wb_card, options);
-    };
-    var getFavWeiboBackup = function (mid) { // 获取备份
-        if (!mid) {
-            toastr.error('未找到mid，代码需要改进');
-            return;
-        }
-        let fav_backup_group = GM_getValue(KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], rootCard, photos = [], photo_parse_index = 0, video_parse_index = 0;
-        if (card) {
-            if (card.root) { // 如果传入的mid只是一个转发mid
-                rootCard = card;
-                card = fav_backup_group[String(rootCard.forward)]; // 获取实际存储数据的mid
-                if (card) {
-                    card.forward = true;
-                    card.rootCard = rootCard;
-                    if (!rootCard.name) {
-                        rootCard.name = (rootCard.text ? rootCard.text.substr(0, 15) : rootCard.mid);
-                    }
-                } else {
-                    card = rootCard;
-                }
-            }
-            card.photos && $.each(card.photos, function(i, fileName) {
-                let photo = {url: 'https://wx3.sinaimg.cn/large/' + fileName, fileName: fileName, location: 'photos', folder_sort_index: ++photo_parse_index};
-                photos.push(photo);
-            });
-            card.livePhotos && $.each(card.livePhotos, function(i, fileName) {
-                let photo = {url: 'https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/' + fileName + '&KID=unistore,videomovSrc', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
-                photos.push(photo);
-            });
-            // card.videos && $.each(card.videos, function(i, fileName) {
-            //     let photo = {url: 'http://f.video.weibocdn.com/' + fileName + '?KID=unistore,video', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
-            //     photos.push(photo);
-            // });
-            card.photos = photos;
-            delete card.livePhotos;
-            delete card.videos;
-            if (!card.name) {
-                card.name = (card.text ? card.text.substr(0, 15) : card.mid);
-            }
-        }
-        return card;
-    }
-    var removeFavWeiboBackup = function (mid, cancleIfNotForward) { // 移除备份
-        if (!mid) {
-            toastr.error('未找到mid，代码需要改进');
-            return 400;
-        }
-        let fav_backup_group = GM_getValue(KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], forwardCard;
-        if (card) {
-            if (card.root) { // 如果传入的mid只是一个转发mid
-                forwardCard = fav_backup_group[String(card.forward)];
-                if (forwardCard && forwardCard.forward === true) { // 如果实际存储数据的mid没有明确收藏操作，则一起删除
-                    delete fav_backup_group[String(forwardCard.mid)];
-                }
-            }
-            if (card.root || cancleIfNotForward !== true || card.forward === true) {
-                delete fav_backup_group[String(card.mid)];
-                GM_setValue(KEY_FAV_BACKUP_GROUP, fav_backup_group);
-                toastr.success("删除收藏本地备份成功~");
-            }
-            return 200;
-        } else {
-            return 404;
-        }
-    };
-    var getAutoBackUpSetting = function () { // 获取是否开启收藏时自动备份的设置值
-        return !!GM_getValue(KEY_SETTING_AUTO_BACKUP_FAV);
-    }
-    var switchAutoBackUpSetting = function(on) { // 切换收藏时自动备份的设置值
-        let saveValue = !!on;
-        if (switch_auto_backup_fav_id) {
-            GM_unregisterMenuCommand(switch_auto_backup_fav_id);
-        }
-        if (saveValue) {
-            switch_auto_backup_fav_id = GM_registerMenuCommand('开启收藏时确认备份弹窗', function() {
-                switchAutoBackUpSetting(false);
-                toastr.success("已关闭自动备份~");
-            });
-        } else {
-            switch_auto_backup_fav_id = GM_registerMenuCommand('关闭收藏时确认备份弹窗', function() {
-                switchAutoBackUpSetting(true);
-                toastr.success("已开启自动备份~");
-            });
-        }
-        if (getAutoBackUpSetting() !== saveValue) {
-            GM_setValue(KEY_SETTING_AUTO_BACKUP_FAV, saveValue);
-        }
-    }
-    var generateBatchDownloadOptionsFromBackup = function ($wb_card, card) {
-        let options = {
-            files: card.photos,
-        }
-        if (isWeiboDelete($wb_card, true)) {
-            options.callback = {
-                'parseFiles_callback': function () {
-                    return card.photos;
-                },
-                'makeNames_callback': function (files, location_info, options) {
-                    var names = {};
-                    names.infoName = "card_info.txt";
-                    names.infoValue = "";
-                    var printCardInfoToText = function (card) {
-                        let infoValue = '', isForward = card.forward === true;
-                        infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
-                        $.each(card, function (key, value) {
-                            if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
-                                infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
-                            }
-                        });
-                        infoValue += "-----------------------------------" + "\r\n";
-                        $.each(card.user, function (key, value) {
-                            infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
-                        });
-                        infoValue += "-----------------------------------" + "\r\n";
-                        return infoValue;
-                    }
-                    card.link = 'https://weibo.com/' + card.user.uid + '/' + card.id;
-                    card.user.home_link = 'https://weibo.com/u/' + card.user.uid;
-                    if (card.rootCard) {
-                        card.rootCard.link = 'https://weibo.com/' + card.rootCard.user.uid + '/' + card.rootCard.id;
-                        card.rootCard.user.home_link = 'https://weibo.com/u/' + card.rootCard.user.uid;
-                        names.card = card.rootCard;
-                        names.forwardCard = card;
-                    } else {
-                        names.card = card;
-                    }
-                     // 主贴的信息
-                    names.infoValue += printCardInfoToText(names.card);
-                    if (names.forwardCard) { // 被转发贴的信息
-                        names.infoValue += printCardInfoToText(names.forwardCard);
-                    }
-                    names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
-                         .replace(/\.\./g, "")
-                         .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
-                         .replace(/(^[_-]+)|([_-]+$)/g, "")
-                         .replace(/(^\s+)|(\s+$)/g, ""));
-                    names.folderName = names.zipName;
-                    names.prefix = null;
-                    names.suffix = options.suffix;
-                    return names;
-                },
-            };
-        }
-        return options;
-    }
-    var showFavWeiboRestoreBtn = function () {
-         $('.WB_cardwrap:not(.has-set-restore-btn)').find('> .WB_empty, .WB_expand > .WB_empty').find('.WB_innerwrap p')
-            .prepend('<button class="restore-backup-fav-weibo" style="margin-right:15px;cursor:pointer;" title="made by Jeffrey.Deng">查看备份</button>').closest('.WB_cardwrap:not(.has-set-restore-btn)').addClass('has-set-restore-btn');
-    }
-    $('body').on('click', '.WB_cardwrap .W_pages', function() {
-        setTimeout(function() {
-            showFavWeiboRestoreBtn();
-        }, 3000);
-        setTimeout(function() {
-            showFavWeiboRestoreBtn();
-        }, 4500);
-        setTimeout(function() {
-            showFavWeiboRestoreBtn();
-        }, 6000);
-    });
-    $('body').on('mouseenter', '.WB_cardwrap:not(.has-set-restore-btn) > .WB_empty, .WB_cardwrap:not(.has-set-restore-btn) .WB_expand > .WB_empty', function() {
-        showFavWeiboRestoreBtn();
-    });
-    $('body').on('click', '.WB_cardwrap .WB_feed_handle a[action-type="fl_favorite"]', function () {
-        var $self = $(this), $wb_card = $self.closest(".WB_cardwrap"),
-            isHasFavorite = $self.attr('favorite') == '1',
-            mid = findWeiboCardMid($wb_card, false),
-            omid = findWeiboCardMid($wb_card, true);
-        if (!mid || !omid) {
-            toastr.error('未找到mid，代码需要改进');
-            return;
-        }
-        if (!isHasFavorite) {
-            if (!getAutoBackUpSetting() && !unsafeWindow.confirm('是否将收藏中的链接备份到缓存，以防止博主删除？')) {
+                   },
+                   "makeNames_callback": function (photos, location_info, options) {
+                       var names = {},
+                           weibo = $wb_card.data('weibo'),
+                           isForward = weibo.retweeted_status ? true : false; // 是否是转发
+                       names.infoName = "card_info.txt";
+                       names.infoValue = "";
+                       var printCardInfoToText = function (card) {
+                           let infoValue = '', isForward = card.forward === true;
+                           infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
+                           $.each(card, function (key, value) {
+                               if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
+                                   infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
+                               }
+                           });
+                           infoValue += "-----------------------------------" + "\r\n";
+                           $.each(card.user, function (key, value) {
+                               infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
+                           });
+                           infoValue += "-----------------------------------" + "\r\n";
+                           return infoValue;
+                       }
+                       var findCardInfo = function (weibo, isForward) {
+                           var user = {};
+                           user.uid = weibo.user.id;
+                           user.nickname = weibo.user.screen_name;
+                           user.home_link = 'https://www.weibo.com' + weibo.user.profile_url;
+                           var card = {};
+                           card.forward = isForward;
+                           card.link = `https://weibo.com/${weibo.user.id}/${weibo.mblogid}`;
+                           card.id = weibo.mblogid;
+                           card.mid = weibo.mid;
+                           card.date = weibo.created_at;
+                           card.date_timestamp = weibo.created_at;
+                           card.text = weibo.text;
+                           var textLines = $('<div/>').html(card.text).text().split(/\s{4,}|\s*\n\s*/);
+                           card.name = textLines[0];
+                           if (card.name.length <= 5 && textLines.length > 1) {
+                               card.name += textLines[1];
+                           }
+                           if (card.name.length > 30) {
+                               card.name = card.name.substring(0, 30);
+                           }
+                           card.photo_count = photos.length;
+                           card.user = user;
+                           card.photos = photos;
+                           return card;
+                       };
+                       names.card = findCardInfo(weibo, false); // 主贴的信息
+                       names.infoValue += printCardInfoToText(names.card);
+                       if (isForward) {
+                           // 转发的贴的信息
+                           names.forwardCard = findCardInfo(weibo.retweeted_status, true);
+                           names.infoValue += printCardInfoToText(names.forwardCard);
+                       }
+                       names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
+                               .replace(/\.\./g, "")
+                               .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
+                               .replace(/(^[_-]+)|([_-]+$)/g, "")
+                               .replace(/(^\s+)|(\s+$)/g, ""));
+                       names.folderName = names.zipName;
+                       names.prefix = null;
+                       names.suffix = options.suffix;
+                       return names;
+                   },
+                   "beforeFilesDownload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       const paddingZeroLength = String(photos.length).length,
+                             card = (names.forwardCard || names.card),
+                             sortByOrigin = options.sortByOrigin;
+                       $.each(photos, function (i, photo) {
+                           if (!photo.fileName) {
+                               photo.fileName = photo.url.substring(photo.url.lastIndexOf('/') + 1);
+                           }
+                           if (sortByOrigin) {
+                               photo.originName = photo.fileName;
+                               photo.fileName = card.user.uid + '_' + card.id + '_' + common_utils.paddingZero(photo.folder_sort_index, paddingZeroLength) + '_' + photo.originName;
+                           }
+                       });
+                       options.failFiles = undefined;
+                   },
+                   "beforeFileDownload_callback": function (photo, location_info, options, zipFileLength, zip, main_folder, folder) {
+                       if (options.only_download_url || options.only_print_url) {
+                           return false;
+                       } else {
+                           return true;
+                       }
+                   },
+                   "eachFileOnload_callback": function (blob, photo, location_info, options, zipFileLength, zip, main_folder, folder) {
+                       if (blob == null) {
+                           if (!options.failFiles) {
+                               options.failFiles = [];
+                           }
+                           options.failFiles.push(photo);
+                       } else if (photo.location == 'photos' && blob.type === 'image/gif' && photo.fileName.indexOf('.gif') === -1) {
+                           // 如果在超过9张图（over9pic）中含有gif，那么后缀需要根据content-type来判断
+                           let suffixRegex = /\.[^.]+$/, suffix = '.gif';
+                           photo.fileName = photo.fileName.replace(suffixRegex, suffix);
+                           photo.url = photo.url.replace(suffixRegex, suffix);
+                           photo.originName && (photo.originName = photo.originName.replace(suffixRegex, suffix));
+                       }
+                       return true;
+                   },
+                   "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       let photo_urls_str = "", failPhotoListStr = "", photo_url, failFile;
+                       // 链接列表文件
+                       $.each(photos, function (i, photo) {
+                           if (photo.location == 'videos' && photo.url.indexOf('f.video.weibocdn.com') != -1 && photo.url.indexOf('&Expires=') == -1 && !/\.mov$/.test(photo.fileName)) {
+                               photo_url = 'http://f.video.weibocdn.com/' + (photo.originName || photo.fileName) + '?KID=unistore,video';
+                           } else {
+                               photo_url = photo.url;
+                           }
+                           let line = ((photo.location ? (photo.location + "/") : "" ) + photo.fileName) + "\t" + photo_url + "\r\n";
+                           photo_urls_str += line;
+                       });
+                       main_folder.file("photo_url_list.txt", photo_urls_str);
+                       // 失败链接列表文件
+                       if (options.failFiles && options.failFiles.length > 0) {
+                           toastr.error("共 " + options.failFiles.length + " 张下载失败，已记录在photos_fail_list.txt！", "", {
+                               "progressBar": false,
+                               timeOut: 0
+                           });
+                           for (let i in options.failFiles) {
+                               failFile = options.failFiles[i];
+                               failPhotoListStr += (failFile.location + "/" + failFile.fileName + "\t" + failFile.url + "\r\n");
+                           }
+                           main_folder.file("photos_fail_list.txt", failPhotoListStr);
+                       }
+                       // 如果只是打印链接
+                       if (options.only_print_url) {
+                           resolver.showPhotoLinksPopPanel($wb_card, options);
+                           toastr.success("已打印");
+                           return false;
+                       }
+                   }
+               }
+           };
+           if (options) {
+               $.extend(true, config, options);
+           }
+           batchDownload(config);
+        },
+        "addFavWeiboBackup": function ($wb_card) { // 保存备份
+            const resolver = this;
+            var options = {
+               "only_print_url": true,
+               "isNeedConfirmDownload": false,
+               "callback": {
+                   "allFilesOnload_callback": function (photos, names, location_info, options, zip, main_folder) {
+                       let fav_backup_group, beforeSaveCard, saveCard = {}, rootCard = {}, user = {}, picNames = [], livePhotos = [], videos = [], card = names.forwardCard || names.card;
+                       if (!card.mid) {
+                           toastr.error('未找到mid，代码需要改进');
+                           return false;
+                       }
+                       fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {});
+                       saveCard.id = card.id;
+                       saveCard.mid = card.mid;
+                       saveCard.date = card.date;
+                       saveCard.text = card.text;
+                       saveCard.forward = card.forward;
+                       card.countdown_page !== undefined && (saveCard.countdown_page = card.countdown_page);
+                       user.uid = card.user.uid;
+                       user.nickname = card.user.nickname;
+                       $.each(photos, function (i, photo) {
+                           let originName = photo.originName || photo.fileName;
+                           if (photo.location == 'photos') {
+                               picNames.push(originName);
+                           } else if (photo.location == 'videos') {
+                               if (/\.mov$/.test(originName)) {
+                                   livePhotos.push(originName);
+                               } else if (photo.url.indexOf('f.video.weibocdn.com') != -1) { // 先存起来，可能以后有新办法
+                                   videos.push(originName);
+                               }
+                           }
+                       });
+                       saveCard.user = user;
+                       saveCard.photos = picNames;
+                       saveCard.livePhotos = livePhotos;
+                       saveCard.videos = videos;
+                       if (names.forwardCard) {
+                            beforeSaveCard = fav_backup_group[String(saveCard.mid)];
+                           // 如果被转发的微博执行了明确收藏操作就不覆盖该forward值
+                           if (saveCard.forward === true && beforeSaveCard && beforeSaveCard.forward === false) {
+                               saveCard.forward = false;
+                           }
+                           rootCard.root = true;
+                           rootCard.id = names.card.id;
+                           rootCard.mid = names.card.mid;
+                           rootCard.date = names.card.date;
+                           rootCard.text = names.card.text;
+                           rootCard.forward = names.forwardCard.mid;
+                           rootCard.user = {
+                               uid: names.card.user.uid,
+                               nickname: names.card.user.nickname,
+                           }
+                       }
+                       fav_backup_group[String(saveCard.mid)] = saveCard;
+                       if (names.forwardCard) {
+                           fav_backup_group[String(rootCard.mid)] = rootCard;
+                       }
+                       GM_setValue(Constants.KEY_FAV_BACKUP_GROUP, fav_backup_group);
+                       toastr.success("收藏备份到本地成功~");
+                       return false;
+                   },
+               }
+           };
+           resolver.downloadWeiboCardPhotos($wb_card, options);
+        },
+        "getFavWeiboBackup": function (mid) { // 获取备份
+            const resolver = this;
+            if (!mid) {
+                toastr.error('未找到mid，代码需要改进');
                 return;
             }
-            if (isWeiboDelete($wb_card, true) && getFavWeiboBackup(omid)) {
+            let fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], rootCard, photos = [], photo_parse_index = 0, video_parse_index = 0;
+            if (card) {
+                if (card.root) { // 如果传入的mid只是一个转发mid
+                    rootCard = card;
+                    card = fav_backup_group[String(rootCard.forward)]; // 获取实际存储数据的mid
+                    if (card) {
+                        card.forward = true;
+                        card.rootCard = rootCard;
+                        if (!rootCard.name) {
+                            rootCard.name = (rootCard.text ? rootCard.text.substr(0, 15) : rootCard.mid);
+                        }
+                    } else {
+                        card = rootCard;
+                    }
+                }
+                card.photos && $.each(card.photos, function(i, fileName) {
+                    let photo = {url: 'https://wx3.sinaimg.cn/large/' + fileName, fileName: fileName, location: 'photos', folder_sort_index: ++photo_parse_index};
+                    photos.push(photo);
+                });
+                card.livePhotos && $.each(card.livePhotos, function(i, fileName) {
+                    let photo = {url: 'https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/' + fileName + '&KID=unistore,videomovSrc', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
+                    photos.push(photo);
+                });
+                // card.videos && $.each(card.videos, function(i, fileName) {
+                //     let photo = {url: 'http://f.video.weibocdn.com/' + fileName + '?KID=unistore,video', fileName: fileName, location: 'videos', folder_sort_index: ++video_parse_index};
+                //     photos.push(photo);
+                // });
+                card.photos = photos;
+                delete card.livePhotos;
+                delete card.videos;
+                if (!card.name) {
+                    card.name = (card.text ? card.text.substr(0, 15) : card.mid);
+                }
+            }
+           return card;
+        },
+        "removeFavWeiboBackup": function (mid, cancleIfNotForward) { // 移除备份
+            const resolver = this;
+            if (!mid) {
+                toastr.error('未找到mid，代码需要改进');
+                return 400;
+            }
+            let fav_backup_group = GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {}), card = fav_backup_group[String(mid)], forwardCard;
+            if (card) {
+                if (card.root) { // 如果传入的mid只是一个转发mid
+                    forwardCard = fav_backup_group[String(card.forward)];
+                    if (forwardCard && forwardCard.forward === true) { // 如果实际存储数据的mid没有明确收藏操作，则一起删除
+                        delete fav_backup_group[String(forwardCard.mid)];
+                    }
+                }
+                if (card.root || cancleIfNotForward !== true || card.forward === true) {
+                    delete fav_backup_group[String(card.mid)];
+                    GM_setValue(Constants.KEY_FAV_BACKUP_GROUP, fav_backup_group);
+                    toastr.success("删除收藏本地备份成功~");
+                }
+                return 200;
+            } else {
+                return 404;
+            }
+        },
+        "generateBatchDownloadOptionsFromBackup": function ($wb_card, card) {
+            const resolver = this;
+            let options = {
+                files: card.photos,
+            }
+            if (resolver.isWeiboDelete($wb_card, true)) {
+                options.callback = {
+                    'parseFiles_callback': function () {
+                        return card.photos;
+                    },
+                    'makeNames_callback': function (files, location_info, options) {
+                        var names = {};
+                        names.infoName = "card_info.txt";
+                        names.infoValue = "";
+                        var printCardInfoToText = function (card) {
+                            let infoValue = '', isForward = card.forward === true;
+                            infoValue += "-----------" + (isForward ? "forward card" : "card") + "--------------" + "\r\n";
+                            $.each(card, function (key, value) {
+                                if (key !== 'user' && key !== 'photos' && key !== 'videos' && key !== 'rootCard') {
+                                    infoValue += (isForward ? "forward_" : "") + "card_" + key + "：" + value + "\r\n";
+                                }
+                            });
+                            infoValue += "-----------------------------------" + "\r\n";
+                            $.each(card.user, function (key, value) {
+                                infoValue += (isForward ? "forward_" : "") + "user_" + key + "：" + value + "\r\n";
+                            });
+                            infoValue += "-----------------------------------" + "\r\n";
+                            return infoValue;
+                        }
+                        card.link = 'https://weibo.com/' + card.user.uid + '/' + card.id;
+                        card.user.home_link = 'https://weibo.com/u/' + card.user.uid;
+                        if (card.rootCard) {
+                            card.rootCard.link = 'https://weibo.com/' + card.rootCard.user.uid + '/' + card.rootCard.id;
+                            card.rootCard.user.home_link = 'https://weibo.com/u/' + card.rootCard.user.uid;
+                            names.card = card.rootCard;
+                            names.forwardCard = card;
+                        } else {
+                            names.card = card;
+                        }
+                         // 主贴的信息
+                        names.infoValue += printCardInfoToText(names.card);
+                        if (names.forwardCard) { // 被转发贴的信息
+                            names.infoValue += printCardInfoToText(names.forwardCard);
+                        }
+                        names.zipName = names.card.user.nickname + "_" + names.card.user.uid + "_" + names.card.id + "_" + (names.card.name
+                             .replace(/\.\./g, "")
+                             .replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, "").replace(/[\u200b]+$/, "")
+                             .replace(/(^[_-]+)|([_-]+$)/g, "")
+                             .replace(/(^\s+)|(\s+$)/g, ""));
+                        names.folderName = names.zipName;
+                        names.prefix = null;
+                        names.suffix = options.suffix;
+                        return names;
+                    },
+                };
+            }
+            return options;
+        },
+        "batchDownloadPageWeiboCard": function() {
+            const resolver = this;
+            if (!/weibo\.com\/(\d+\/profile|\d+(\?|$)|u\/\d+(\?|$)|fav(\?|$)|like\/outbox(\?|$))/.test(document.location.href)) {
+                toastr.error('只支持在用户主页下载');
+                return;
+            }
+            if (!confirm('确定要下载本页所有微博吗？')) {
+                return;
+            }
+            let $notify_start = toastr.success("准备批量下载本页~", "", {
+                "progressBar": false,
+                "hideDuration": 0,
+                "showDuration": 0,
+                "timeOut": 0,
+                "closeButton": false
+            }).toggleClass('batch-download-list-tips', true), count = 0, failPhotoCount = 0;
+            const downloadQueue = new common_utils.TaskQueue(function($wb_card) {
+                return $.Deferred(function(dfd) {
+                    if ($wb_card.length > 0 && ($wb_card.attr('action-type') === 'feed_list_item' || $wb_card.children().eq(0).attr('action-type') === 'feed_list_item')) {
+                        count++;
+                        if ($notify_start.length === 0 || !$notify_start.is(':visible')) {
+                            $notify_start = toastr.success("本页批量下载第 1 个~", "", {
+                                "progressBar": false,
+                                "hideDuration": 0,
+                                "showDuration": 0,
+                                "timeOut": 0,
+                                "closeButton": false
+                            }).toggleClass('batch-download-list-tips', true);
+                        } else {
+                            $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个~`);
+                        }
+                        $wb_card[0].scrollIntoView({block: 'center'});
+                        let options = {};
+                        if (resolver.isWeiboDelete($wb_card, true)) {
+                            let mid = resolver.findWeiboCardMid($wb_card, false),
+                                omid = resolver.findWeiboCardMid($wb_card, true),
+                                card;
+                            card = resolver.getFavWeiboBackup(mid) || (mid != omid && resolver.getFavWeiboBackup(omid)) || null;
+                            if (card) {
+                                options = resolver.generateBatchDownloadOptionsFromBackup($wb_card, card);
+                            } else {
+                                dfd.resolve();
+                                return;
+                            }
+                        }
+                        $.extend(true, options, {
+                            isNeedConfirmDownload: false,
+                            callback:{
+                                beforeZipFileDownload_callback:function (zip_blob, files, names, location_info, options, zip, main_folder) {
+                                    common_utils.downloadBlobFile(zip_blob, names.zipName + ".zip");
+                                    failPhotoCount += (options.failFiles && options.failFiles.length || 0);
+                                    dfd.resolve();
+                                }
+                            }
+                        });
+                        resolver.downloadWeiboCardPhotos($wb_card, options);
+                    } else {
+                        dfd.reject();
+                    }
+                }).done(function() {
+                    $('#toast-container').children('.toast').not('.batch-download-list-tips').hide().remove();
+                    $notify_start.find(".toast-message").text(`本页批量下载第 ${count} 个完成~`);
+                    if ($wb_card.next().attr('node-type') === 'lazyload') {
+                        setTimeout(function(){
+                            downloadQueue.append($wb_card.next());
+                        }, 1500);
+                    } else {
+                        downloadQueue.append($wb_card.next());
+                    }
+                }).fail(function() {
+                    $notify_start.hide().remove();
+                    if (count > 0) {
+                        toastr.success('本页批量下载完成');
+                        if (failPhotoCount > 0) {
+                            toastr.error(`共 ${failPhotoCount} 张图片或视频下载失败~<br>链接已记录在photos_fail_list.txt`);
+                        }
+                    } else {
+                        toastr.error('本页没有微博');
+                    }
+                });
+            });
+            downloadQueue.append($('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]').eq(0));
+        },
+        "showFavWeiboRestoreBtn": function () {
+             $('.WB_cardwrap:not(.has-set-restore-btn)').find('> .WB_empty, .WB_expand > .WB_empty').find('.WB_innerwrap p')
+            .prepend('<button class="restore-backup-fav-weibo" style="margin-right:15px;cursor:pointer;" title="made by Jeffrey.Deng">查看备份</button>').closest('.WB_cardwrap:not(.has-set-restore-btn)').addClass('has-set-restore-btn');
+        },
+        "findFeedCardItemList": function () {
+            var list = $('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]');
+            return list.length > 0 ? list : $('.WB_cardwrap');
+        },
+        "findCardArrowDown": function () {
+            //debugger;
+            return $('article.woo-panel-main .woo-box-flex .woo-font.woo-font--angleDown');
+        },
+        "findElemClosestCard": function (elem) {
+            return $(elem).closest("article.woo-panel-main");
+        },
+        "findCardPhotoDownloadBtn": function() {
+            return $('article.woo-panel-main .woo-pop-wrap .woo-pop-wrap-main .WB_card_photos_download');
+        },
+        "findDeletedCard": function() {
+            return $('.WB_cardwrap:not(.has-set-restore-btn) > .WB_empty, .WB_cardwrap:not(.has-set-restore-btn) .WB_expand > .WB_empty');
+        },
+        "findCardFavBtn": function() {
+            return $('article.woo-panel-main .woo-pop-wrap .woo-pop-wrap-main > .woo-pop-item-main.fav_btn');
+        },
+        "findCardShowBackupBtn": function() {
+            return $('article.woo-panel-main .woo-pop-wrap .woo-pop-wrap-main .WB_card_photos_show_fav_weibo_backup');
+        },
+        "findCardRebuildBackupBtn": function() {
+            return $('article.woo-panel-main .woo-pop-wrap .woo-pop-wrap-main .WB_card_photos_rebuild_fav_weibo_backup');
+        },
+        "findCardRestoreBackupBtn": function() {
+            return $('.WB_cardwrap .restore-backup-fav-weibo');
+        },
+});
+
+var resolver;
+
+const core = {
+
+    getWeiBoResolver: function () {
+        if ($('body > #app').length > 0) {
+            return NewWeiboResolver;
+        } else {
+            return OldWeiboResolver;
+        }
+    },
+    init: function () {
+
+        unsafeWindow.$ = $;
+
+        resolver = this.getWeiBoResolver();
+
+        // hack: 仪表盘控制栏添加按钮，暂时不启用
+        if (false && document.location.href.match(/^https:\/\/(www\.)?weibo\.com\/(?!u\/)\d{8,}\/(?!profile\/)\w{8,}\?.*$/)) {
+            GM_registerMenuCommand('下载', function() {
+                resolver.downloadWeiboCardPhotos(resolver.findFeedCardItemList().eq(0));
+            }, 'd');
+            GM_registerMenuCommand('备份', function() {
+                let $wb_card = resolver.findFeedCardItemList().eq(0), mid = resolver.findWeiboCardMid($wb_card, true);
+                if (!mid) {
+                    toastr.error('未找到mid，代码需要改进');
+                    return;
+                };
+                if (resolver.isWeiboDelete($wb_card, true) && resolver.getFavWeiboBackup(mid)) {
+                    if (!unsafeWindow.confirm('原博已被删除，这会删除之前的备份，是否继续？')) {
+                        return;
+                    }
+                }
+                resolver.addFavWeiboBackup($wb_card);
+            }, 'b');
+        }
+       
+        $("body").on("mousedown", resolver.findCardArrowDown().selector, function (e) {
+            if (e.data == 'mu') {
+                return;
+            }
+            debugger;
+            resolver.addDownloadBtnToWeiboCard(resolver.findElemClosestCard(this));
+        });
+        $("body").on("click", resolver.findCardPhotoDownloadBtn().selector, function () {
+            var $self = $(this);
+            var options = {"only_download_url": $self.hasClass('WB_card_photos_download_only_download_url'), "only_print_url": $self.hasClass('WB_card_photos_download_only_print_url')};
+            if (options.only_print_url) {
+                options.isNeedConfirmDownload = false;
+            }
+            resolver.downloadWeiboCardPhotos(resolver.findElemClosestCard($self), options);
+            if (core.getWeiBoResolver() === NewWeiboResolver) {
+                resolver.findElemClosestCard(this).find('.woo-box-flex .woo-font.woo-font--angleDown').trigger('click', 'mu');
+            }
+        });
+       
+        GM_registerMenuCommand('一键下载(用户|收藏)一页的微博', resolver.batchDownloadPageWeiboCard);
+       
+
+        // 收藏备份
+        let switch_auto_backup_fav_id;
+        var getAutoBackUpSetting = function () { // 获取是否开启收藏时自动备份的设置值
+            return !!GM_getValue(Constants.KEY_SETTING_AUTO_BACKUP_FAV);
+        };
+        var switchAutoBackUpSetting = function(on) { // 切换收藏时自动备份的设置值
+            let saveValue = !!on;
+            if (switch_auto_backup_fav_id) {
+                GM_unregisterMenuCommand(switch_auto_backup_fav_id);
+            }
+            if (saveValue) {
+                switch_auto_backup_fav_id = GM_registerMenuCommand('开启收藏时确认备份弹窗', function() {
+                    switchAutoBackUpSetting(false);
+                    toastr.success("已关闭自动备份~");
+                });
+            } else {
+                switch_auto_backup_fav_id = GM_registerMenuCommand('关闭收藏时确认备份弹窗', function() {
+                    switchAutoBackUpSetting(true);
+                    toastr.success("已开启自动备份~");
+                });
+            }
+            if (getAutoBackUpSetting() !== saveValue) {
+                GM_setValue(Constants.KEY_SETTING_AUTO_BACKUP_FAV, saveValue);
+            }
+        };
+        $('body').on('click', '.WB_cardwrap .W_pages', function() {
+            setTimeout(function() {
+                resolver.showFavWeiboRestoreBtn();
+            }, 3000);
+            setTimeout(function() {
+                resolver.showFavWeiboRestoreBtn();
+            }, 4500);
+            setTimeout(function() {
+                resolver.showFavWeiboRestoreBtn();
+            }, 6000);
+        });
+        $('body').on('mouseenter', resolver.findDeletedCard().selector, function() {
+            resolver.showFavWeiboRestoreBtn();
+        });
+        $('body').on('mousedown', resolver.findCardFavBtn().selector, function () {
+            var $self = $(this), $wb_card = resolver.findElemClosestCard($self), 
+                isHasFavorite = $self.attr('favorite') == '1' || $self.text() === '取消收藏';
+                mid = resolver.findWeiboCardMid($wb_card, false),
+                omid = resolver.findWeiboCardMid($wb_card, true);
+            if (!mid || !omid) {
+                toastr.error('未找到mid，代码需要改进');
+                return;
+            }
+            if (!isHasFavorite) {
+                if (!getAutoBackUpSetting() && !unsafeWindow.confirm('是否将收藏中的链接备份到缓存，以防止博主删除？')) {
+                    return;
+                }
+                if (resolver.isWeiboDelete($wb_card, true) && resolver.getFavWeiboBackup(omid)) {
+                    if (!unsafeWindow.confirm('原博已被删除，这会删除之前的备份，是否继续？')) {
+                        return;
+                    }
+                }
+                resolver.addFavWeiboBackup($wb_card);
+            } else {
+                // 兼容旧版本
+                resolver.removeFavWeiboBackup(mid) === 404 && mid != omid && resolver.removeFavWeiboBackup(omid, true);
+            }
+        });
+        $('body').on('click', resolver.findCardShowBackupBtn().selector, function () {
+            let $wb_card = resolver.findElemClosestCard(this),
+                mid = resolver.findWeiboCardMid($wb_card, false),
+                omid = resolver.findWeiboCardMid($wb_card, true);
+            if (!mid || !omid) {
+                toastr.error('未找到mid，代码需要改进');
+                return;
+            }
+            // 兼容旧版本
+            let card = resolver.getFavWeiboBackup(mid) || (mid != omid && resolver.getFavWeiboBackup(omid)) || null;
+            if (card) {
+                resolver.showPhotoLinksPopPanel($wb_card, resolver.generateBatchDownloadOptionsFromBackup($wb_card, card));
+            } else {
+                toastr.info('本地备份没有备份该微博~');
+            }
+        });
+        $('body').on('click', resolver.findCardRebuildBackupBtn().selector, function () {
+            let $wb_card = resolver.findElemClosestCard(this),
+                mid = resolver.findWeiboCardMid($wb_card, true);
+            if (!mid) {
+                toastr.error('未找到mid，代码需要改进');
+                return;
+            };
+            if (resolver.isWeiboDelete($wb_card, true) && resolver.getFavWeiboBackup(mid)) {
                 if (!unsafeWindow.confirm('原博已被删除，这会删除之前的备份，是否继续？')) {
                     return;
                 }
             }
-            addFavWeiboBackup($wb_card);
-        } else {
-            // 兼容旧版本
-            removeFavWeiboBackup(mid) === 404 && mid != omid && removeFavWeiboBackup(omid, true);
-        }
-    });
-    $('body').on('click', '.WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_show_fav_weibo_backup', function () {
-        let $wb_card = $(this).closest(".WB_cardwrap"),
-            mid = findWeiboCardMid($wb_card, false),
-            omid = findWeiboCardMid($wb_card, true);
-        if (!mid || !omid) {
-            toastr.error('未找到mid，代码需要改进');
-            return;
-        }
-        // 兼容旧版本
-        let card = getFavWeiboBackup(mid) || (mid != omid && getFavWeiboBackup(omid)) || null;
-        if (card) {
-            showPhotoLinksPopPanel($wb_card, generateBatchDownloadOptionsFromBackup($wb_card, card));
-        } else {
-            toastr.info('本地备份没有备份该微博~');
-        }
-    });
-    $('body').on('click', '.WB_cardwrap .WB_screen .layer_menu_list .WB_card_photos_rebuild_fav_weibo_backup', function () {
-        let $wb_card = $(this).closest(".WB_cardwrap"),
-            mid = findWeiboCardMid($wb_card, true);
-        if (!mid) {
-            toastr.error('未找到mid，代码需要改进');
-            return;
-        };
-        if (isWeiboDelete($wb_card, true) && getFavWeiboBackup(mid)) {
-            if (!unsafeWindow.confirm('原博已被删除，这会删除之前的备份，是否继续？')) {
+            resolver.addFavWeiboBackup($wb_card);
+        });
+        $('body').on('click', resolver.findCardRestoreBackupBtn().selector, function () {
+            var $self = $(this), $wb_card = resolver.findElemClosestCard(this), mid, omid;
+            mid = resolver.findWeiboCardMid($wb_card, false);
+            omid = resolver.findWeiboCardMid($wb_card, true);
+            if (!mid || !omid) {
+                toastr.error('未找到mid，代码需要改进');
                 return;
             }
-        }
-        addFavWeiboBackup($wb_card);
-    });
-    $('body').on('click', '.WB_cardwrap .restore-backup-fav-weibo', function () {
-        var $self = $(this), $wb_card = $self.closest(".WB_cardwrap"), mid, omid;
-        mid = findWeiboCardMid($wb_card, false);
-        omid = findWeiboCardMid($wb_card, true);
-        if (!mid || !omid) {
-            toastr.error('未找到mid，代码需要改进');
-            return;
-        }
-        if (!$self.hasClass('has-restore')) {
-            let card = getFavWeiboBackup(mid) || (mid != omid && getFavWeiboBackup(omid)) || null;
-            if (card) {
-                let $pop;
-                $wb_card.append('<div class="WB_feed_detail clearfix" style="padding-top:0px;"><div class="WB_detail"><div class="WB_info" style="display:inline-block;"><a target="_blank"></a></div>' +
-                                '<div class="WB_from" style="display:inline-block;margin-left:10px"><a target="_blank"></a></div><div class="WB_text"><div><div></div>');
-                $wb_card.find('.WB_detail .WB_info a').text(card.user.nickname).attr('href', '//weibo.com/u/' + card.user.uid);
-                $wb_card.find('.WB_detail .WB_from a').text(card.date).attr('href', '//weibo.com/' + card.user.uid + '/' + card.id);
-                $wb_card.find('.WB_detail .WB_text').text(card.text);
-                $pop = showPhotoLinksPopPanel($wb_card, generateBatchDownloadOptionsFromBackup($wb_card, card), false);
-                $pop.attr('style', 'position:relative;top:0px;right:0px;margin:0 auto;padding:4px 20px 6px;width:75%;z-index:50;').find('.preview').attr('style', 'position:absolute;width:84%;');
-                $self.text('删除备份').attr('disabled', 'disabled').addClass('has-restore'); // 设置禁用，防止连续点击两下把备份删了
-                setTimeout(function(){
-                    $self.removeAttr('disabled');
-                }, 800);
+            if (!$self.hasClass('has-restore')) {
+                let card = resolver.getFavWeiboBackup(mid) || (mid != omid && resolver.getFavWeiboBackup(omid)) || null;
+                if (card) {
+                    let $pop;
+                    $wb_card.append('<div class="WB_feed_detail clearfix" style="padding-top:0px;"><div class="WB_detail"><div class="WB_info" style="display:inline-block;"><a target="_blank"></a></div>' +
+                                    '<div class="WB_from" style="display:inline-block;margin-left:10px"><a target="_blank"></a></div><div class="WB_text"><div><div></div>');
+                    $wb_card.find('.WB_detail .WB_info a').text(card.user.nickname).attr('href', '//weibo.com/u/' + card.user.uid);
+                    $wb_card.find('.WB_detail .WB_from a').text(card.date).attr('href', '//weibo.com/' + card.user.uid + '/' + card.id);
+                    $wb_card.find('.WB_detail .WB_text').text(card.text);
+                    $pop = resolver.showPhotoLinksPopPanel($wb_card, resolver.generateBatchDownloadOptionsFromBackup($wb_card, card), false);
+                    $pop.attr('style', 'position:relative;top:0px;right:0px;margin:0 auto;padding:4px 20px 6px;width:75%;z-index:50;').find('.preview').attr('style', 'position:absolute;width:84%;');
+                    $self.text('删除备份').attr('disabled', 'disabled').addClass('has-restore'); // 设置禁用，防止连续点击两下把备份删了
+                    setTimeout(function(){
+                        $self.removeAttr('disabled');
+                    }, 800);
+                } else {
+                    toastr.info('本地备份没有备份该微博~');
+                }
             } else {
-                toastr.info('本地备份没有备份该微博~');
-            }
-        } else {
-            if (!unsafeWindow.confirm('你确定要删除收藏备份吗？删除后不可恢复')) {
-                return;
-            }
-            // 兼容旧版本
-            removeFavWeiboBackup(mid) === 404 && mid != omid && removeFavWeiboBackup(omid, true);
-            $self.remove();
-        }
-    });
-     // 批量备份一页收藏
-    GM_registerMenuCommand('备份本页中所有的收藏', function() {
-        if (!/(?:www\.)?weibo\.com\/fav/.test(document.location.href)) {
-            toastr.error('只能在收藏页执行本操作');
-            return;
-        }
-        let $weibo_cards = $('.WB_feed').children('.WB_cardwrap[action-type="feed_list_item"]'), $not_backup_cards, $weibo_card, mid, count = 0;
-        $not_backup_cards = $weibo_cards.filter(function(i) {
-            $weibo_card = $(this);
-            mid = findWeiboCardMid($weibo_card, true);
-            if (!isWeiboDelete($weibo_card, true) && !getFavWeiboBackup(mid)) {
-                count++;
-                return true;
-            } else {
-                return false;
+                if (!unsafeWindow.confirm('你确定要删除收藏备份吗？删除后不可恢复')) {
+                    return;
+                }
+                // 兼容旧版本
+                resolver.removeFavWeiboBackup(mid) === 404 && mid != omid && resolver.removeFavWeiboBackup(omid, true);
+                $self.remove();
             }
         });
-        if (count > 0) {
-            if (confirm(`共 ${count} 条微博未备份，是否备份？`)) {
-                $not_backup_cards.each(function () {
-                    addFavWeiboBackup($(this));
-                });
-                toastr.success(`新备份 ${count} 个`);
+         // 批量备份一页收藏
+        GM_registerMenuCommand('备份本页中所有的收藏', function() {
+            if (!/(?:www\.)?weibo\.com\/fav/.test(document.location.href)) {
+                toastr.error('只能在收藏页执行本操作');
+                return;
             }
-        } else {
-            toastr.info('本页之前已全部完成备份~');
-        }
-    });
-    // 收藏时自动备份提示开关
-    switchAutoBackUpSetting(getAutoBackUpSetting());
-    // 添加已删除微博还原按钮
-    setTimeout(function() {
-        var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
-        if (tab_type_flag && /.*(favlistsearch)$/.test(tab_type_flag)) {
-            showFavWeiboRestoreBtn();
-        }
-    }, 1200);
-    setTimeout(function() {
-        var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
-        if (tab_type_flag && /.*(favlistsearch)$/.test(tab_type_flag)) {
-            showFavWeiboRestoreBtn();
-        }
-    }, 4000);
+            let $weibo_cards = resolver.findFeedCardItemList$(), $not_backup_cards, $weibo_card, mid, count = 0;
+            $not_backup_cards = $weibo_cards.filter(function(i) {
+                $weibo_card = $(this);
+                mid = resolver.findWeiboCardMid($weibo_card, true);
+                if (!resolver.isWeiboDelete($weibo_card, true) && !resolver.getFavWeiboBackup(mid)) {
+                    count++;
+                    return true;
+                } else {
+                    return false;
+                }
+            });
+            if (count > 0) {
+                if (confirm(`共 ${count} 条微博未备份，是否备份？`)) {
+                    $not_backup_cards.each(function () {
+                        resolver.addFavWeiboBackup($(this));
+                    });
+                    toastr.success(`新备份 ${count} 个`);
+                }
+            } else {
+                toastr.info('本页之前已全部完成备份~');
+            }
+        });
+        // 收藏时自动备份提示开关
+        switchAutoBackUpSetting(getAutoBackUpSetting());
+        // 添加已删除微博还原按钮
+        setTimeout(function() {
+            var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
+            if (tab_type_flag && /.*(favlistsearch)$/.test(tab_type_flag)) {
+                resolver.showFavWeiboRestoreBtn();
+            }
+        }, 1200);
+        setTimeout(function() {
+            var tab_type_flag = $(".WB_main_c").find("div:nth-child(1)").attr("id");
+            if (tab_type_flag && /.*(favlistsearch)$/.test(tab_type_flag)) {
+                resolver.showFavWeiboRestoreBtn();
+            }
+        }, 4000);
+    },
+};
+
+core.init();
+
+
 });
