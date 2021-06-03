@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.0.2
+// @version         2.0.3
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -2309,7 +2309,7 @@ const core = {
                 toastr.error('只能在收藏页执行本操作');
                 return;
             }
-            let $weibo_cards = resolver.findFeedCardItemList$(), $not_backup_cards, $weibo_card, mid, count = 0;
+            let $weibo_cards = resolver.findFeedCardItemList(), $not_backup_cards, $weibo_card, mid, count = 0;
             $not_backup_cards = $weibo_cards.filter(function(i) {
                 $weibo_card = $(this);
                 mid = resolver.findWeiboCardMid($weibo_card, true);
