@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.0.3
+// @version         2.0.4
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -43,7 +43,7 @@
 // ==/UserScript==
 
 // @更新日志
-// v.2.0        2021.5.30      1.初步适配新版微博，修复18图bug
+// v.2.0        2021.5.30      1.初步适配新版微博，修复18图bug，修复批量下载bug
 // v.1.9.4      2020.8.15      1.去掉下载超时时间，修复当照片大小超大时，陷于循环的情况
 // v.1.9.3      2020.7.11      1.修复jQuery下载失败问题
 // V 1.9.2      2020.06.29     1.照片按原页面显示顺序排序
@@ -671,10 +671,10 @@ class Interface {
  * 微博解析器接口
  */
 const WeiboResolver = new Interface("WeiboResolver",[
-        "addDownloadBtnToWeiboCard", // 
-        "showPhotoLinksPopPanel", // 
-        "findWeiboCardMid", // 
-        "isWeiboDelete", // 
+        "addDownloadBtnToWeiboCard", //
+        "showPhotoLinksPopPanel", //
+        "findWeiboCardMid", //
+        "isWeiboDelete", //
         "downloadWeiboCardPhotos",
         "addFavWeiboBackup",
         "getFavWeiboBackup",
@@ -790,7 +790,7 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
                 console.log(photo.url);
             });
             return $pop;
-        }, // 
+        }, //
         "findWeiboCardMid": function ($wb_card, findForwardIfHas) {
             const resolver = this;
             let mid, isForward = $wb_card.attr("isforward") == '1' ? true : false,
@@ -804,7 +804,7 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
                 }
             }
             return mid;
-        }, // 
+        }, //
         "isWeiboDelete": function ($wb_card, findForwardIfHas) {
             const resolver = this;
             var isForward = $wb_card.attr("isforward") == '1';
@@ -813,7 +813,7 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
             } else {
                 return $wb_card.find('> .WB_empty').length > 0;
             }
-        }, // 
+        }, //
         "downloadWeiboCardPhotos": function (wb_card_node, options) {
             const resolver = this;
             var $wb_card = (wb_card_node instanceof $) ? wb_card_node : $(wb_card_node);
@@ -962,7 +962,7 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
                                                 }
                                             });
                                         }
-                                        
+
                                         parsePhotosFromIds(picIds, pic_video_ids);
                                         deferred.resolve(photo_arr);
                                    },
@@ -1575,7 +1575,7 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                 console.log(photo.url);
             });
             return $pop;
-        }, // 
+        }, //
         "findWeiboCardMid": function ($wb_card, findForwardIfHas) {
             const resolver = this;
             let mid, weibo = $wb_card.data('weibo'),
@@ -1586,7 +1586,7 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                 mid = weibo.mid
             }
             return mid;
-        }, // 
+        }, //
         "isWeiboDelete": function ($wb_card, findForwardIfHas) {
             let mid, weibo = $wb_card.data('weibo'),
                isForward = weibo.retweeted_status ? true : false; // 是否是转发
@@ -1594,7 +1594,7 @@ Interface.impl($.extend(NewWeiboResolver,OldWeiboResolver), WeiboResolver, {
                 return true;
             }
             return false;
-        }, // 
+        }, //
         "downloadWeiboCardPhotos": function (wb_card_node, options) {
             const resolver = this;
             var $wb_card = (wb_card_node instanceof $) ? wb_card_node : $(wb_card_node);
@@ -2150,7 +2150,7 @@ const core = {
                 resolver.addFavWeiboBackup($wb_card);
             }, 'b');
         }
-       
+
         $("body").on("mousedown", resolver.findCardArrowDown().selector, function (e) {
             if (e.data == 'mu') {
                 return;
@@ -2168,9 +2168,11 @@ const core = {
                 resolver.findElemClosestCard(this).find('.woo-box-flex .woo-font.woo-font--angleDown').trigger('click', 'mu');
             }
         });
-       
-        GM_registerMenuCommand('一键下载(用户|收藏)一页的微博', resolver.batchDownloadPageWeiboCard);
-       
+
+        GM_registerMenuCommand('一键下载(用户|收藏)一页的微博', function() {
+            resolver.batchDownloadPageWeiboCard();
+        });
+
 
         // 收藏备份
         let switch_auto_backup_fav_id;
@@ -2215,7 +2217,7 @@ const core = {
             resolver.showFavWeiboRestoreBtn();
         });
         $('body').on('mousedown', resolver.findCardFavBtn().selector, function () {
-            var $self = $(this), $wb_card = resolver.findElemClosestCard($self), 
+            var $self = $(this), $wb_card = resolver.findElemClosestCard($self),
                 isHasFavorite = $self.attr('favorite') == '1' || $self.text() === '取消收藏',
                 mid = resolver.findWeiboCardMid($wb_card, false),
                 omid = resolver.findWeiboCardMid($wb_card, true);
