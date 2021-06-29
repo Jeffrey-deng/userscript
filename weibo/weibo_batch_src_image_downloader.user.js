@@ -1346,7 +1346,7 @@ Interface.impl(OldWeiboResolver, WeiboResolver, {
         },
         "batchDownloadPageWeiboCard": function() {
             const resolver = this;
-            if (!/weibo\.com\/(\d+\/profile|\d+(\?|$)|u\/\d+(\?|$)|fav(\?|$)|like\/outbox(\?|$))/.test(document.location.href)) {
+            if ($('#Pl_Official_Headerv6__1').length == 0 && !/weibo\.com\/(\d+\/profile|\d+(\?|$)|u\/\d+(\?|$)|fav(\?|$)|like\/outbox(\?|$))/.test(document.location.href)) {
                 toastr.error('只支持在用户主页下载');
                 return;
             }
