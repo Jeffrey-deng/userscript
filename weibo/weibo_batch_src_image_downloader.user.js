@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.3.3
+// @version         2.3.4
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -418,12 +418,20 @@
             "closeButton": false
         });
         if (!options.isNeedHasFiles || (files && files.length > 0)) {
+            var fixTimezoneOffset = function () {
+                const currDate = new Date();
+                const dateWithOffset = new Date(currDate.getTime() - currDate.getTimezoneOffset() * 60000);
+                // replace the default date with dateWithOffset
+                JSZip.defaults.date = dateWithOffset;
+            }
             var zip = new JSZip();
+            fixTimezoneOffset();
             var main_folder = zip.folder(names.folderName);
             var zipFileLength = 0;
             var maxLength = files.length;
             var paddingZeroLength = (files.length + "").length;
             if (names.infoName) {
+                fixTimezoneOffset();
                 main_folder.file(names.infoName, names.infoValue);
             }
             options.callback.beforeFilesDownload_callback(files, names, location_info, options, zip, main_folder);
@@ -434,12 +442,14 @@
                         dfd.resolve();
                         return;
                     }
+                    fixTimezoneOffset();
                     var folder = file.location ? main_folder.folder(file.location) : main_folder;
                     var isSave = options.callback.beforeFileDownload_callback(file, location_info, options, zipFileLength, zip, main_folder, folder);
                     if (isSave !== false) {
                         common_utils.ajaxDownload(file.url, function (blob, file) {
                             var isSave = options.callback.eachFileOnload_callback(blob, file, location_info, options, zipFileLength, zip, main_folder, folder);
                             if (isSave !== false) {
+                                fixTimezoneOffset();
                                 if (file.fileName) {
                                     folder.file(file.fileName, blob);
                                 } else {
