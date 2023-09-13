@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.3.4
+// @version         2.3.5
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -2692,7 +2692,7 @@
                             '<div class="WB_from" style="display:inline-block;margin-left:10px"><a target="_blank"></a></div><div class="WB_text"><div><div></div>');
                             $wb_card.find('.WB_detail .WB_info a').text(card.user.nickname).attr('href', '//weibo.com/u/' + card.user.uid);
                             $wb_card.find('.WB_detail .WB_from a').text(card.date).attr('href', '//weibo.com/' + card.user.uid + '/' + card.id);
-                            $wb_card.find('.WB_detail .WB_text').text(card.text);
+                            $wb_card.find('.WB_detail .WB_text').html(card.text);
                             $pop = resolver.showPhotoLinksPopPanel($wb_card, resolver.generateBatchDownloadOptionsFromBackup($wb_card, card), false);
                             $pop.attr('style', 'position:relative;top:0px;right:0px;margin:0 auto;padding:4px 20px 6px;width:75%;z-index:50;').find('.preview').attr('style', 'position:absolute;width:84%;');
                             $self.text('删除备份').attr('disabled', 'disabled').addClass('has-restore'); // 设置禁用，防止连续点击两下把备份删了
@@ -2709,7 +2709,7 @@
                             );
                             $wb_card.find('.WB_detail .WB_info a').text(card.user.nickname).attr('href', '//weibo.com/u/' + card.user.uid);
                             $wb_card.find('.WB_detail .WB_from a').text(card.date).attr('href', '//weibo.com/' + card.user.uid + '/' + card.id);
-                            $wb_card.find('.WB_detail .WB_text').text(card.text);
+                            $wb_card.find('.WB_detail .WB_text').html(card.text);
                             $pop = resolver.showPhotoLinksPopPanel($wb_card, resolver.generateBatchDownloadOptionsFromBackup($wb_card, card), false);
                             $pop.addClass('restore-fav-pop').attr('style', 'position:relative;top:0px;right:0px;margin:0 auto;padding:4px 20px 6px;width:75%;z-index:50;margin-bottom:15px;')
                                 .find('.preview').attr('style', 'position: absolute;width: 70%;right: 100%;top: 0px;')
