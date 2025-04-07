@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.3.5
+// @version         2.3.6
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -25,10 +25,10 @@
 // @connect         tbcache.com
 // @connect         youku.com
 // @connect         *
-// @require         https://cdn.bootcss.com/jquery/1.11.1/jquery.min.js
-// @require         https://cdn.bootcss.com/toastr.js/2.1.3/toastr.min.js
-// @require         https://cdn.bootcss.com/jszip/3.1.5/jszip.min.js
-// @resource        toastr_css https://cdn.bootcss.com/toastr.js/2.1.3/toastr.min.css
+// @require         https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.1/jquery.min.js
+// @require         https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.3/toastr.min.js
+// @require         https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js
+// @resource        toastr_css https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.3/toastr.min.css
 // @grant           GM.xmlHttpRequest
 // @grant           GM_xmlHttpRequest
 // @grant           GM_download
@@ -43,6 +43,9 @@
 // ==/UserScript==
 
 // @更新日志
+// v.2.3.6      2025.4.8       1.更改依赖包cdn地址
+// v.2.3.5      2023.9.14      1.优化删除微博还原显示，不显示html代码而是显示解析值
+// v.2.3.4      2023.4.24      1.修复微博打包下载zip内，文件修改时间错位8个时区问题
 // v.2.3        2023.4.8       1.支持图片与视频混合微博、支持多视频微博
 //                             2.新版微博支持在【收藏页面】的【被删除的微博】上用备份数据还原显示
 // v.2.2        2023.4.2       1.简单适配新版微博批量下载、评论收藏、收藏面板；新版微博的html元素是往下滚动是复用的，所以脚本总是无法达到老版微博的体验，请理解
@@ -311,7 +314,7 @@
                 handleNextTask();
             };
         };
-        
+
         /**
         * 判断元素是否在出现在可见区域内
         *
@@ -323,33 +326,33 @@
         var isOnScreen = function (element, ON_SCREEN_HEIGHT, ON_SCREEN_WIDTH) {
             var ON_SCREEN_HEIGHT = ON_SCREEN_HEIGHT || 20;
             var ON_SCREEN_WIDTH = ON_SCREEN_WIDTH || 20;
-    
+
             var rect = element.getBoundingClientRect();
             var windowHeight = window.innerHeight || document.documentElement.clientHeight;
             var windowWidth = window.innerWidth || document.documentElement.clientWidth;
-    
+
             var elementHeight = element.offsetHeight;
             var elementWidth = element.offsetWidth;
-    
+
             var onScreenHeight = ON_SCREEN_HEIGHT > elementHeight ? elementHeight : ON_SCREEN_HEIGHT;
             var onScreenWidth = ON_SCREEN_WIDTH > elementWidth ? elementWidth : ON_SCREEN_WIDTH;
-    
+
             // 元素在屏幕上方
             var elementBottomToWindowTop = rect.top + elementHeight;
             var bottomBoundingOnScreen = elementBottomToWindowTop >= onScreenHeight;
-    
+
             // 元素在屏幕下方
             var elementTopToWindowBottom = windowHeight - (rect.bottom - elementHeight);
             var topBoundingOnScreen = elementTopToWindowBottom >= onScreenHeight;
-    
+
             // 元素在屏幕左侧
             var elementRightToWindowLeft = rect.left + elementWidth;
             var rightBoundingOnScreen = elementRightToWindowLeft >= onScreenWidth;
-    
+
             // 元素在屏幕右侧
             var elementLeftToWindowRight = windowWidth - (rect.right - elementWidth);
             var leftBoundingOnScreen = elementLeftToWindowRight >= onScreenWidth;
-    
+
             return bottomBoundingOnScreen && topBoundingOnScreen && rightBoundingOnScreen && leftBoundingOnScreen;
         };
 
@@ -1911,7 +1914,7 @@
                 return false;
             } else {
                 return $wb_card.find('header').length === 0 || $wb_card.hasClass('Fav-Panel-Card');
-            }   
+            }
         }, //
         "downloadWeiboCardPhotos": function (wb_card_node, options) {
             const resolver = this;
@@ -2618,7 +2621,7 @@
                         return;
                     }
                     resolver.showFavWeiboRestoreBtn();
-                }); 
+                });
             }
             $('body').on('mousedown', resolver.findCardFavBtn().selector, function () {
                 var $self = $(this), $wb_card = resolver.findElemClosestCard($self),
@@ -2674,7 +2677,7 @@
                 }
                 resolver.addFavWeiboBackup($wb_card);
             });
-            
+
             resolver.RestoreBackupBtnEventFunc = function () {
                 var $self = $(this), $wb_card = resolver.findElemClosestCard(this), mid, omid;
                 mid = resolver.findWeiboCardMid($wb_card, false);
@@ -2764,9 +2767,9 @@
                     }
                 } else {
                     resolver.batchBackFavWeiboCard();
-                
+
                 }
-                
+
             });
             // 收藏时自动备份提示开关
             switchAutoBackUpSetting(getAutoBackUpSetting());
@@ -2866,7 +2869,7 @@
             }
             return fav_list;
         }
-        
+
         // let fav_list_json = Object.values(GM_getValue(Constants.KEY_FAV_BACKUP_GROUP, {})).sort(function (l, r) {
         //         return (l.fav_date || l.date) > (r.fav_date || r.date) ? 1 : -1
         //     }).map(function (card) {
@@ -2891,9 +2894,9 @@
                 </div>
             </div>`;
         }
-        
+
         let containerName = resolver.getResolverName() === "OldWeiboResolver" ? "#plc_main .WB_main_c" : "#app";
-        
+
         $(containerName).find('.wb-fav-panel-content').html(fav_list_html);
         //document.querySelector('.wb-fav-panel-content').innerHTML = ;
 
@@ -2954,24 +2957,24 @@
                 border-top-width: 2px;
                 border-top-style: outset;
             }
-            
+
             .wb-fav-panel-content .WB_cardwrap:nth-child(1) {
                 padding-top: 30px;
             }
-            
+
             .wb-fav-panel-content .WB_text {
                 font-size: 14px;
                 padding: 20px 0px 20px 20px;
             }
-            
+
             .wb-fav-panel-content .WB_text img {
                 width: 1em;
             }
-            
+
             .wb-fav-panel-content .WB_from, .wb-fav-panel-content .WB_info {
                 font-size: 16px;
             }
-            
+
             .wb-fav-panel-content .WB_empty {
                 text-align: unset;
             }
@@ -2991,7 +2994,7 @@
         `);
 
         let containerName = resolver.getResolverName() === "OldWeiboResolver" ? "#plc_main .WB_main_c" : "#app";
-        
+
         $(containerName).append(
             `<div class="WB_feed WB_feed_v3 WB_feed_v4 wb-fav-panel-location" node-type="feed_list">
                     <div class="wb-fav-panel">
