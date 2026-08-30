@@ -3,7 +3,7 @@
 // @name:zh         批量下载微博原图、视频、livephoto
 // @name:en         Batch Download Src Image From Weibo Card
 // @namespace       https://github.com/Jeffrey-deng/userscript
-// @version         2.3.7
+// @version         2.3.8
 // @description     一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:zh  一键打包下载微博中一贴的原图、视频、livephoto，收藏时本地自动备份
 // @description:en  Batch download weibo's source image
@@ -45,6 +45,7 @@
 // ==/UserScript==
 
 // @更新日志
+// v.2.3.8      2026.8.30      1.视频采用封面相同排序编号
 // v.2.3.7      2026.1.9       1.修复批量下载问题
 // v.2.3.6      2025.4.8       1.更改依赖包cdn地址
 // v.2.3.5      2023.9.14      1.优化删除微博还原显示，不显示html代码而是显示解析值
@@ -1938,7 +1939,7 @@
                         // var mblogid = $author_head.attr("href").replace(/\?[^?]*$/,'').match(/\/([a-zA-Z0-9]+)$/) && RegExp.$1;
                         var mblogid = resolver.findCardMblogId($wb_card);
                         var photo_parse_index = 0;
-                        var video_parse_index = 0;
+                        // var video_parse_index = 0;
                         var photo_arr = [];
                         var buildPhoto = function (photo_id, photo_url, photo_video_id) {
                             var photo = {};
@@ -1952,20 +1953,12 @@
                                 video.video_id = photo_video_id;
                                 video.url = "https://video.weibo.com/media/play?livephoto=//us.sinaimg.cn/" + photo_video_id + ".mov&KID=unistore,videomovSrc";
                                 video.fileName = photo_video_id + ".mov";
-                                video.folder_sort_index = ++video_parse_index;
+                                video.folder_sort_index = photo.folder_sort_index;
                                 video.location = "videos";
                                 photo_arr.push(video);
                             }
                         };
                         var buildVideo = function (video_id, video_url, short_url, video_cover_url) {
-                            var video = {};
-                            video.video_id = video_id;
-                            video.url = video_url;
-                            video.short_url = short_url;
-                            video.fileName = video.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
-                            video.folder_sort_index = ++video_parse_index;
-                            video.location = "videos";
-                            photo_arr.push(video);
                             var photo = {};
                             video_cover_url.match(/\/(([^\/]+)\.[a-zA-Z0-9]+)$/);
                             photo.photo_id = RegExp.$2;
@@ -1973,6 +1966,14 @@
                             photo.folder_sort_index = ++photo_parse_index;
                             photo.location = "photos";
                             photo_arr.push(photo);
+                            var video = {};
+                            video.video_id = video_id;
+                            video.url = video_url;
+                            video.short_url = short_url;
+                            video.fileName = video.url.match(/\/([^/?]+?(\.mp4)?)\?/)[1] + (RegExp.$2 ? "" : ".mp4");
+                            video.folder_sort_index = photo.folder_sort_index;
+                            video.location = "videos";
+                            photo_arr.push(video);
                         }
                         var parsePhotosFromIds = function (weibo, dfd) {
                             // 用户发表微博引用了别的用户的视频会有这种情况
